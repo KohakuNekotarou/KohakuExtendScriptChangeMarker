@@ -1,0 +1,286 @@
+//========================================================================================
+//  
+//  $File: $
+//  
+//  Owner: 
+//  
+//  $Author: $
+//  
+//  $DateTime: $
+//  
+//  $Revision: $
+//  
+//  $Change: $
+//  
+//  Copyright 1997-2012 Adobe Systems Incorporated. All rights reserved.
+//  
+//  NOTICE:  Adobe permits you to use, modify, and distribute this file in accordance 
+//  with the terms of the Adobe license agreement accompanying it.  If you have received
+//  this file from a source other than Adobe, then your use, modification, or 
+//  distribution of it requires the prior written permission of Adobe.
+//  
+//========================================================================================
+
+#include "VCPlugInHeaders.h"
+
+// General includes:
+#include "MenuDef.fh"
+#include "ActionDef.fh"
+#include "ActionDefs.h"
+#include "AdobeMenuPositions.h"
+#include "LocaleIndex.h"
+#include "PMLocaleIds.h"
+#include "StringTable.fh"
+#include "ObjectModelTypes.fh"
+#include "ShuksanID.h"
+#include "ActionID.h"
+#include "CommandID.h"
+#include "WorkspaceID.h"
+#include "WidgetID.h"
+#include "BuildNumber.h"
+#include "PlugInModel_UIAttributes.h"
+
+#include "ScriptInfoTypes.fh"
+#include "AppFrameworkID.h"
+
+#include "SpreadID.h"	// for kPageObjectScriptElement
+#include "GraphicsID.h"	// for IID_IDRWEVTHANDLER
+#include "DocFrameworkID.h"	// for kDocumentObjectScriptElement
+
+// Project includes:
+#include "KESCMID.h"
+#include "GenericID.h"
+#include "ShuksanID.h"
+#include "TextID.h"
+
+#include "KESCMScriptingDefs.h"
+
+
+#ifdef __ODFRC__
+
+/*  
+ * Plugin version definition.
+ */
+resource PluginVersion (kSDKDefPluginVersionResourceID)
+{
+	kTargetVersion,
+	kKESCMPluginID,
+	kSDKDefPlugInMajorVersionNumber, kSDKDefPlugInMinorVersionNumber,
+	kSDKDefHostMajorVersionNumber, kSDKDefHostMinorVersionNumber,
+	kKESCMCurrentMajorFormatNumber, kKESCMCurrentMinorFormatNumber,
+	{ kInDesignProduct },
+	{ kWildFS },
+	kModelPlugIn,
+	kKESCMVersion
+};
+
+/*  
+ * The ExtraPluginInfo resource adds extra information to the Missing Plug-in dialog
+ * that is popped when a document containing this plug-in's data is opened when
+ * this plug-in is not present. These strings are not translatable strings
+ * since they must be available when the plug-in isn't around. They get stored
+ * in any document that this plug-in contributes data to.
+ */
+resource ExtraPluginInfo(1)
+{
+	kKESCMCompanyValue,			// Company name
+	kKESCMMissingPluginURLValue,	// URL 
+	kKESCMMissingPluginAlertValue,	// Missing plug-in alert text
+};
+
+/* 
+ * Boss class definitions.
+ */
+resource ClassDescriptionTable(kSDKDefClassDescriptionTableResourceID)
+{{{
+	Class
+	{
+		kKESCMScriptProviderBoss,
+		kBaseScriptProviderBoss,
+		{
+			IID_ISCRIPTPROVIDER,kKESCMScriptProviderImpl,
+			
+		}
+	},
+
+	Class
+	{
+		kKESCMDrawEventServiceBoss,
+		kInvalidClass,
+		{
+			IID_IK2SERVICEPROVIDER, kKESCMDrawEventSrvcImpl,
+			IID_IDRWEVTHANDLER,     kKESCMDrawEventHandlerImpl,
+		}
+	},
+}}};
+
+/*  
+ * Implementation definition.
+ */
+resource FactoryList (kSDKDefFactoryListResourceID)
+{
+	kImplementationIDSpace,
+	{
+		#include "KESCMFactoryList.h"
+	}
+};
+
+
+/*  
+ * Locale Indicies.
+ * The LocaleIndex should have indicies that point at your
+ * localizations for each language system that you are localized for.
+ */
+
+/*  
+ * String LocaleIndex.
+ */
+resource LocaleIndex ( kSDKDefStringsResourceID)
+{
+	kStringTableRsrcType,
+	{
+		kWildFS, k_enUS, kSDKDefStringsResourceID + index_enUS
+		kWildFS, k_enGB, kSDKDefStringsResourceID + index_enUS
+		kWildFS, k_deDE, kSDKDefStringsResourceID + index_enUS
+		kWildFS, k_frFR, kSDKDefStringsResourceID + index_enUS
+		kWildFS, k_esES, kSDKDefStringsResourceID + index_enUS
+		kWildFS, k_ptBR, kSDKDefStringsResourceID + index_enUS
+		kWildFS, k_svSE, kSDKDefStringsResourceID + index_enUS
+		kWildFS, k_daDK, kSDKDefStringsResourceID + index_enUS
+		kWildFS, k_nlNL, kSDKDefStringsResourceID + index_enUS
+		kWildFS, k_itIT, kSDKDefStringsResourceID + index_enUS
+		kWildFS, k_nbNO, kSDKDefStringsResourceID + index_enUS
+		kWildFS, k_fiFI, kSDKDefStringsResourceID + index_enUS
+		kInDesignJapaneseFS, k_jaJP, kSDKDefStringsResourceID + index_jaJP
+	}
+};
+
+resource LocaleIndex (kSDKDefStringsNoTransResourceID)
+{
+	kStringTableRsrcType,
+	{
+		kWildFS, k_Wild, kSDKDefStringsNoTransResourceID + index_enUS
+	}
+};
+
+// Strings not being localized
+resource StringTable (kSDKDefStringsNoTransResourceID + index_enUS)
+{
+	k_enUS,									// Locale Id
+	kEuropeanMacToWinEncodingConverter,		// Character encoding converter
+	{
+	}
+};
+/*
+
+/*  Scripting definition
+	In InDesign/InCopy, scripting resources are defined via ODFRez statements for cross-platform compatibility.
+*/
+resource VersionedScriptElementInfo(2)
+{
+	// Contexts
+	{
+        kFiredrakeScriptVersion, kCoreScriptManagerBoss, kInDesignAllLanguagesFS, k_Wild,
+		kFiredrakeScriptVersion, kCoreScriptManagerBoss, kInCopyAllLanguagesFS, k_Wild,
+		
+	}
+	
+	// Elements
+	{
+		// Page.kescmMarkChanges(sourcePage) - rasterizes BOTH this page (new) and sourcePage (old, may be in
+		// ANOTHER document) at 72dpi ARGB, detects changed pixels, and overlays a semi-transparent RED RING
+		// around each change. The change itself and the rest stay TRANSPARENT (the live page shows through).
+		// The ring thickness stays constant on screen (recomputed from the zoom at draw time). Screen only,
+		// non-persistent (nothing is stored in the .indd).
+		// ExtendScript:  doc1.spreads[0].pages[0].kescmMarkChanges(doc2.spreads[0].pages[0]);
+		Method
+		{
+			kKESCMMarkChangesMethodScriptElement,
+			e_KESCMMarkChanges,
+			"kescm mark changes",
+			"Marks the changes between this page and the given page with a red ring overlay (screen only).",
+			StringType,
+			"Status string",
+			{
+				p_KESCMSourcePage, "KESCM source page", "The page to compare against this one (any document)", ObjectType(kPageObjectScriptElement), kRequired,
+			}
+		}
+
+		// Page.kescmClearMarks() - removes the change-mark overlay shown on this page.
+		// ExtendScript:  doc1.spreads[0].pages[0].kescmClearMarks();
+		Method
+		{
+			kKESCMClearMarksMethodScriptElement,
+			e_KESCMClearMarks,
+			"kescm clear marks",
+			"Clears the change-mark overlay shown on this page.",
+			StringType,
+			"Status string",
+			{}
+		}
+
+		// Document.kescmMarkChangesDoc(sourceDoc) - compares each page of THIS document against the
+		// corresponding page (by index) of sourceDoc and marks all changed pages with the red ring.
+		// Unchanged pages get no overlay. Screen only, non-persistent.
+		// ExtendScript:  app.documents[0].kescmMarkChangesDoc(app.documents[1]);
+		Method
+		{
+			kKESCMMarkChangesDocMethodScriptElement,
+			e_KESCMMarkChangesDoc,
+			"kescm mark changes doc",
+			"Marks changed pages of this document against the given source document (screen only).",
+			StringType,
+			"Status string",
+			{
+				p_KESCMSourceDoc, "KESCM source document", "The document to compare against (page i vs page i)", ObjectType(kDocumentObjectScriptElement), kRequired,
+			}
+		}
+
+		// Page/Document.kescmShowPageX([flag]) - shows (default) or hides a diagonal X drawn across each
+		// CHANGED page, so you can spot which pages changed at a glance (even when zoomed far out).
+		// The flag is optional; omit it to show. Screen only, non-persistent, independent of the marks.
+		// ExtendScript:  app.documents[0].kescmShowPageX(false);  // hide
+		Method
+		{
+			kKESCMShowPageXMethodScriptElement,
+			e_KESCMShowPageX,
+			"kescm show page x",
+			"Shows or hides a diagonal X across each changed page (screen only).",
+			StringType,
+			"Status string",
+			{
+				p_KESCMShowPageXFlag, "show", "kTrue to show the X (default), kFalse to hide it", BoolDefaultType(kTrue), kOptional,
+			}
+		}
+
+		// Connects this plug-in's methods and properties to scripting.
+		Provider
+		{
+			kKESCMScriptProviderBoss,	// provider boss ID
+			{
+				Object{ kPageObjectScriptElement },
+				Method{ kKESCMMarkChangesMethodScriptElement },
+				Method{ kKESCMClearMarksMethodScriptElement },
+				Method{ kKESCMShowPageXMethodScriptElement },
+			}
+		}
+
+		// Document-level: bulk mark across all pages + clear + show/hide X (same provider boss, Document object).
+		Provider
+		{
+			kKESCMScriptProviderBoss,
+			{
+				Object{ kDocumentObjectScriptElement },
+				Method{ kKESCMMarkChangesDocMethodScriptElement },
+				Method{ kKESCMClearMarksMethodScriptElement },
+				Method{ kKESCMShowPageXMethodScriptElement },
+			}
+		}
+	}
+};
+
+	
+#endif // __ODFRC__
+
+#include "KESCM_enUS.fr"
+#include "KESCM_jaJP.fr"

@@ -1,0 +1,25 @@
+# Build artifacts (Visual Studio / InDesign SDK)
+[Dd]ebug/
+[Rr]elease/
+x64/
+*.obj
+*.pln
+*.pdb
+*.idb
+*.ilk
+*.exp
+*.lib
+*.rpln
+*.tmp
+*.log
+
+# Visual Studio user/state files
+*.user
+*.suo
+*.sdf
+*.opensdf
+.vs/
+
+# OS junk
+.DS_Store
+Thumbs.db
