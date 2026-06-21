@@ -1,37 +1,69 @@
-# ChangeMarker (KESCM)
+# KohakuExtendScriptChangeMarker (KESCM)
 
-Adobe InDesign C++ プラグイン。**2つのドキュメント（旧版／現行）をページ単位でピクセル比較し、変化した箇所を画面上にオーバーレイ表示**します。表示は非印刷・非永続（DrawEventHandler 描画）なので、ドキュメントには一切残りません。再実行で再生成されます。
+Adobe InDesign C++ SDK Plug-In.
 
-> KESCM = **K**ohaku **E**xtend**S**cript **C**hange **M**arker
+InDesign の Script DOM に `kescmMarkChangesDoc()` / `kescmMarkChanges()` /
+`kescmShowPageX()` / `kescmClearMarks()` メソッドを追加する ScriptProvider プラグインです。
+2 つのドキュメント（旧版・現行）をページ単位でオフスクリーンにレンダリングしてピクセル比較し、
+変化した箇所を画面上に赤い枠（リング）で重ねて表示します。表示は非印刷・非永続なので、
+ドキュメントには一切残りません（再実行で再生成）。
 
-## 主な機能
+## 用途
 
-- **ページ単位のピクセル差分**：変化した領域を赤いリング（枠）で囲む。リング太さはズームに追従して一定の見た目。
-- **取りこぼし防止**：比較は高解像度で行い、結果をマックスプーリングで低解像度マスクに圧縮して記憶（常駐メモリは低解像度のまま、検出は高解像度の精度）。
-- **背景適応色**：枠の下が赤っぽい画素なら枠を青に切り替えて埋もれを防止。
-- **変更ページの目印**：ページ対角線の × と、変更数「N chg」（白縁付き）をページ内に表示。
-- **複数ページ／低ズーム対応**：何百ページでも、5% 表示で複数スプレッドが見えても、変化したページすべてに表示。
+改訂前後のドキュメントを突き合わせ、「どのページの・どこが変わったか」を一目で把握します。
+何百ページでも、低ズームで複数スプレッドが同時に見えても、変化したページすべてにマークが出ます。
 
-## スクリプト API（ExtendScript）
+## 使い方 (ExtendScript / JavaScript)
 
-```javascript
+```js
 // 現行ドキュメントの各ページを、旧版ドキュメントの同じページ番号と比較してマーク
 app.documents[0].kescmMarkChangesDoc(app.documents[1]);
 
-// 1ページだけ比較（現行ページ ⇔ 旧版ページ）
+// 1 ページだけ比較 (現行ページ ⇔ 旧版ページ)
 app.documents[0].pages[0].kescmMarkChanges(app.documents[1].pages[0]);
 
-// 対角線×と変更数の表示／非表示
+// 変更ページの対角線 × と変更数表示の ON / OFF (省略時は表示)
 app.documents[0].kescmShowPageX(false);
 
 // すべてのマークを消去
 app.documents[0].kescmClearMarks();
 ```
 
+変化した領域は赤い枠（背景が赤いところは青に切り替え）で囲まれ、変更ページにはページ対角線の
+× と変更箇所数「N chg」が重ねて表示されます。枠の太さ・文字サイズはズームに追従して一定の
+見た目を保ちます。
+
+比較は高解像度で行い、その結果をマックスプーリングで低解像度マスクに圧縮して保持するため、
+小さな差（細線・微小なズレ）の取りこぼしを抑えつつ、常駐メモリは低く保ちます。表示は
+DrawEventHandler による画面描画で、`.indd` には保存されません。
+
 ## ビルド
 
-Adobe InDesign Plug-in SDK のサンプル群（`source/sdksamples/`）配下に置き、SDK のビルド手順に従ってビルドします（Release / x64）。
+本リポジトリはプラグインの**ソースのみ**を含みます。ビルドには Adobe InDesign SDK
+(21.3.0.60) が別途必要です。SDK の `source/sdksamples/KESCM/` に本ソースを配置して
+ビルドしてください。
 
-## チューニング
+## 構成
 
-主要パラメーターは `KESCMScriptProvider.cpp` 冒頭の定数で調整できます（リング太さ・色・しきい値・比較解像度 `kKESCMHiResMul`・プーリング感度 `kKESCMPoolMinCount` など）。
+| ファイル | 役割 |
+|---|---|
+| `KESCMScriptProvider.cpp` | レンダリング → ピクセル比較 → オーバーレイ描画の本体ロジック |
+| `KESCM.fr` | メソッド名・引数・対象 DOM クラスの宣言 |
+| `KESCMScriptingDefs.h` | ScriptID 定義 |
+| `KESCMID.h` / `KESCMID.cpp` | プラグイン ID・各種 ID |
+| `KESCMFactoryList.h` | ファクトリ登録 |
+| `KESCMNoStrip.cpp` | リンカ最適化除けの参照保持 |
+| `TriggerResourceDeps.cpp` | リソース依存トリガ |
+| `KESCM.rc` | Windows リソース |
+| `KESCM_enUS.fr` / `KESCM_jaJP.fr` | 文字列リソース (英 / 日) |
+
+## 作成について
+
+本プラグインは **KohakuNekotarou** が、Anthropic の AI **Claude（Claude Code / Opus 4.8）**
+と協働して設計・実装しました。SDK API の調査、設計方針の検討、C++ コードの実装、
+InDesign 実機（COM 経由）での動作検証まで、対話を通じて二人三脚で進めています。
+
+## 注意
+
+Adobe InDesign SDK 本体は含まれていません。SDK の入手・利用は Adobe のライセンスに
+従ってください。
