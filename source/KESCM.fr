@@ -112,6 +112,28 @@ resource ClassDescriptionTable(kSDKDefClassDescriptionTableResourceID)
 			IID_IDRWEVTHANDLER,     kKESCMDrawEventHandlerImpl,
 		}
 	},
+
+	// Middle-button "peek": snoops kMButtonDn/kMButtonUp (non-consuming) and, while armed,
+	// shows the opaque OLD overlay of the spread under the mouse while the button is held.
+	Class
+	{
+		kKESCMPeekWatcherBoss,
+		kInvalidClass,
+		{
+			IID_IEVENTWATCHER, kKESCMPeekWatcherImpl,
+		}
+	},
+
+	// Starts the peek watcher at app launch (lazy = during an idle task right after startup).
+	Class
+	{
+		kKESCMPeekStartupBoss,
+		kInvalidClass,
+		{
+			IID_ISTARTUPSHUTDOWN,   kKESCMPeekStartupImpl,
+			IID_IK2SERVICEPROVIDER, kLazyStartupShutdownProviderImpl,
+		}
+	},
 }}};
 
 /*  
@@ -253,8 +275,104 @@ resource VersionedScriptElementInfo(2)
 			}
 		}
 
-		// Connects this plug-in's methods and properties to scripting.
-		Provider
+		// [TEST] Page/Document.kescmShowOverset([flag]) - shows (default) or hides a large square-with-plus
+		// marker at the bottom-right (out port) of every OVERSET text frame, drawn screen-only at a
+		// zoom-independent size. Independent of the change marks. ExtendScript: app.documents[0].kescmShowOverset(true);
+		Method
+		{
+			kKESCMShowOversetMethodScriptElement,
+			e_KESCMShowOverset,
+			"kescm show overset",
+			"Shows or hides a large square+plus marker on every overset text frame (screen only).",
+			StringType,
+			"Status string",
+			{
+				p_KESCMShowOversetFlag, "show", "kTrue to show the overset marks (default), kFalse to hide them", BoolDefaultType(kTrue), kOptional,
+			}
+		}
+
+			// Page.kescmShowOriginal(sourcePage) - rasterizes sourcePage (old, may be in another document) at a high
+			// resolution on the fly and overlays it OPAQUELY over this page (a flat "show the old version" cover),
+			// regardless of where any change frames are. Call it for each page of the active spread to cover the
+			// whole spread. The image is kept until kescmHideOriginal()/kescmClearMarks(). Screen only, non-persistent.
+			// ExtendScript:  doc1.spreads[0].pages[0].kescmShowOriginal(doc2.spreads[0].pages[0]);
+			Method
+			{
+				kKESCMShowOriginalMethodScriptElement,
+				e_KESCMShowOriginal,
+				"kescm show original",
+				"Overlays the old (compare-against) page image opaquely over this page (screen only).",
+				StringType,
+				"Status string",
+				{
+					p_KESCMSourcePage, "KESCM source page", "The old page whose image is overlaid (any document)", ObjectType(kPageObjectScriptElement), kRequired,
+				}
+			}
+
+			// Page/Document.kescmHideOriginal() - hides the opaque old-version overlay (the cached images are kept,
+			// so re-showing is instant; memory is freed by kescmClearMarks). Screen only.
+			// ExtendScript:  app.documents[0].kescmHideOriginal();
+			Method
+			{
+				kKESCMHideOriginalMethodScriptElement,
+				e_KESCMHideOriginal,
+				"kescm hide original",
+				"Hides the opaque old-version overlay (screen only).",
+				StringType,
+				"Status string",
+				{}
+			}
+
+			// Document.kescmShowOriginalUnderMouse(sourceDoc) - finds the spread UNDER THE MOUSE CURSOR (not the active
+			// spread) in the frontmost layout view, and overlays each of its pages opaquely with the matching page
+			// (by document page index) of sourceDoc, rasterized on the fly at high resolution. Only that spread is kept.
+			// ExtendScript:  app.documents[0].kescmShowOriginalUnderMouse(app.documents[1]);
+			Method
+			{
+				kKESCMShowOriginalUnderMouseMethodScriptElement,
+				e_KESCMShowOriginalUnderMouse,
+				"kescm show original under mouse",
+				"Overlays the old version of the spread under the mouse cursor (screen only).",
+				StringType,
+				"Status string",
+				{
+					p_KESCMSourceDoc, "KESCM source document", "The old document whose page images are overlaid (page i vs page i)", ObjectType(kDocumentObjectScriptElement), kRequired,
+				}
+			}
+
+			// Document.kescmArmMousePeek(sourceDoc) - arms the middle-button "peek". After arming, holding the
+			// MIDDLE mouse button overlays the OLD version of the spread under the cursor (rasterized on the fly);
+			// releasing the button hides it. The image cache is kept for the most recently peeked spread (instant
+			// re-peek). Pass the OLD document to compare against. Screen only, non-persistent.
+			// ExtendScript:  app.documents[0].kescmArmMousePeek(app.documents[1]);
+			Method
+			{
+				kKESCMArmMousePeekMethodScriptElement,
+				e_KESCMArmMousePeek,
+				"kescm arm mouse peek",
+				"Arms the middle-button peek of the old version of the spread under the mouse (screen only).",
+				StringType,
+				"Status string",
+				{
+					p_KESCMSourceDoc, "KESCM source document", "The old document whose page images are overlaid while peeking (page i vs page i)", ObjectType(kDocumentObjectScriptElement), kRequired,
+				}
+			}
+
+			// Document.kescmDisarmMousePeek() - disarms the middle-button peek, hides any overlay and frees the
+			// cached old-version images. ExtendScript:  app.documents[0].kescmDisarmMousePeek();
+			Method
+			{
+				kKESCMDisarmMousePeekMethodScriptElement,
+				e_KESCMDisarmMousePeek,
+				"kescm disarm mouse peek",
+				"Disarms the middle-button peek and frees the cached old-version images (screen only).",
+				StringType,
+				"Status string",
+				{}
+			}
+
+			// Connects this plug-in's methods and properties to scripting.
+			Provider
 		{
 			kKESCMScriptProviderBoss,	// provider boss ID
 			{
@@ -262,6 +380,9 @@ resource VersionedScriptElementInfo(2)
 				Method{ kKESCMMarkChangesMethodScriptElement },
 				Method{ kKESCMClearMarksMethodScriptElement },
 				Method{ kKESCMShowPageXMethodScriptElement },
+				Method{ kKESCMShowOversetMethodScriptElement },
+				Method{ kKESCMShowOriginalMethodScriptElement },
+				Method{ kKESCMHideOriginalMethodScriptElement },
 			}
 		}
 
@@ -274,6 +395,11 @@ resource VersionedScriptElementInfo(2)
 				Method{ kKESCMMarkChangesDocMethodScriptElement },
 				Method{ kKESCMClearMarksMethodScriptElement },
 				Method{ kKESCMShowPageXMethodScriptElement },
+				Method{ kKESCMShowOversetMethodScriptElement },
+				Method{ kKESCMHideOriginalMethodScriptElement },
+				Method{ kKESCMShowOriginalUnderMouseMethodScriptElement },
+				Method{ kKESCMArmMousePeekMethodScriptElement },
+				Method{ kKESCMDisarmMousePeekMethodScriptElement },
 			}
 		}
 	}

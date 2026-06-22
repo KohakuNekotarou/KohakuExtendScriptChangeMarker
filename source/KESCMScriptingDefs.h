@@ -37,7 +37,13 @@ enum KESCMScriptEvents
 	e_KESCMMarkChanges    = 'eKGm',	// e=method K=Kohaku G=KESCM m=mark  : Page.kescmMarkChanges(sourcePage)
 	e_KESCMClearMarks     = 'eKGc',	// e=method K=Kohaku G=KESCM c=clear : Page.kescmClearMarks()
 	e_KESCMMarkChangesDoc = 'eKGD',	// e=method K=Kohaku G=KESCM D=Doc   : Document.kescmMarkChangesDoc(sourceDoc)
-	e_KESCMShowPageX      = 'eKGx'	// e=method K=Kohaku G=KESCM x=X-mark: Page/Document.kescmShowPageX(flag)
+	e_KESCMShowPageX      = 'eKGx',	// e=method K=Kohaku G=KESCM x=X-mark: Page/Document.kescmShowPageX(flag)
+	e_KESCMShowOverset    = 'eKGo',	// e=method K=Kohaku G=KESCM o=overset: Page/Document.kescmShowOverset(flag) [TEST]
+	e_KESCMShowOriginal   = 'eKGr',	// e=method K=Kohaku G=KESCM r=reveal : Page.kescmShowOriginal(sourcePage) - opaque OLD overlay (arg reuses p_KESCMSourcePage)
+	e_KESCMHideOriginal   = 'eKGh',	// e=method K=Kohaku G=KESCM h=hide   : Page/Document.kescmHideOriginal() - hide the opaque OLD overlay
+	e_KESCMShowOriginalUnderMouse = 'eKGu',	// e=method K=Kohaku G=KESCM u=under-mouse: Document.kescmShowOriginalUnderMouse(sourceDoc) - overlay the spread UNDER THE MOUSE (arg reuses p_KESCMSourceDoc)
+	e_KESCMArmMousePeek    = 'eKGa',	// e=method K=Kohaku G=KESCM a=arm    : Document.kescmArmMousePeek(sourceDoc) - arm the middle-button peek (arg reuses p_KESCMSourceDoc)
+	e_KESCMDisarmMousePeek = 'eKGd'	// e=method K=Kohaku G=KESCM d=disarm : Document.kescmDisarmMousePeek() - disarm the middle-button peek and free the cache
 };
 
 // Property / Parameter IDs
@@ -45,7 +51,8 @@ enum KESCMScriptProperties
 {
 	p_KESCMSourcePage   = 'pKGs',	// p=param K=Kohaku G=KESCM s=source page : compare-against (old) page, may be in another document
 	p_KESCMSourceDoc    = 'pKGD',	// p=param K=Kohaku G=KESCM D=source Doc  : compare-against (old) document
-	p_KESCMShowPageXFlag = 'pKGx'	// p=param K=Kohaku G=KESCM x=X-mark flag : kTrue to show the page X, kFalse to hide
+	p_KESCMShowPageXFlag = 'pKGx',	// p=param K=Kohaku G=KESCM x=X-mark flag : kTrue to show the page X, kFalse to hide
+	p_KESCMShowOversetFlag = 'pKGo'	// p=param K=Kohaku G=KESCM o=overset flag: kTrue to show the overset marks, kFalse to hide
 };
 
 
