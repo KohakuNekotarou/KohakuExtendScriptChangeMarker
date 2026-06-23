@@ -188,14 +188,15 @@ DECLARE_PMID(kActionIDSpace, kKESCMAboutActionID, kKESCMPrefix + 0)
 DECLARE_PMID(kScriptInfoIDSpace, kKESCMMarkChangesMethodScriptElement, kKESCMPrefix + 1)
 DECLARE_PMID(kScriptInfoIDSpace, kKESCMClearMarksMethodScriptElement, kKESCMPrefix + 2)
 DECLARE_PMID(kScriptInfoIDSpace, kKESCMMarkChangesDocMethodScriptElement, kKESCMPrefix + 3)
-DECLARE_PMID(kScriptInfoIDSpace, kKESCMShowPageXMethodScriptElement, kKESCMPrefix + 4)
-DECLARE_PMID(kScriptInfoIDSpace, kKESCMShowOversetMethodScriptElement, kKESCMPrefix + 5)
+// kScriptInfoIDSpace +4 is now free (kescmShowPageX removed; the diagonal page X was dropped)
+// kScriptInfoIDSpace +5 is now free (kescmShowOverset removed); avoid collisions if reused
 DECLARE_PMID(kScriptInfoIDSpace, kKESCMShowOriginalMethodScriptElement, kKESCMPrefix + 6)
 DECLARE_PMID(kScriptInfoIDSpace, kKESCMHideOriginalMethodScriptElement, kKESCMPrefix + 7)
 DECLARE_PMID(kScriptInfoIDSpace, kKESCMShowOriginalUnderMouseMethodScriptElement, kKESCMPrefix + 8)
 DECLARE_PMID(kScriptInfoIDSpace, kKESCMArmMousePeekMethodScriptElement, kKESCMPrefix + 9)
 DECLARE_PMID(kScriptInfoIDSpace, kKESCMDisarmMousePeekMethodScriptElement, kKESCMPrefix + 10)
 DECLARE_PMID(kScriptInfoIDSpace, kKESCMToastMethodScriptElement, kKESCMPrefix + 11)
+DECLARE_PMID(kScriptInfoIDSpace, kKESCMSetPrintMarksMethodScriptElement, kKESCMPrefix + 12)
 
 // "About Plug-ins" sub-menu:
 #define kKESCMAboutMenuKey			kKESCMStringPrefix "kKESCMAboutMenuKey"

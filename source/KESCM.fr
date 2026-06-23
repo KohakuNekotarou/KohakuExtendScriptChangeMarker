@@ -268,39 +268,6 @@ resource VersionedScriptElementInfo(2)
 			}
 		}
 
-		// Page/Document.kescmShowPageX([flag]) - shows (default) or hides a diagonal X drawn across each
-		// CHANGED page, so you can spot which pages changed at a glance (even when zoomed far out).
-		// The flag is optional; omit it to show. Screen only, non-persistent, independent of the marks.
-		// ExtendScript:  app.documents[0].kescmShowPageX(false);  // hide
-		Method
-		{
-			kKESCMShowPageXMethodScriptElement,
-			e_KESCMShowPageX,
-			"kescm show page x",
-			"Shows or hides a diagonal X across each changed page (screen only).",
-			StringType,
-			"Status string",
-			{
-				p_KESCMShowPageXFlag, "show", "kTrue to show the X (default), kFalse to hide it", BoolDefaultType(kTrue), kOptional,
-			}
-		}
-
-		// [TEST] Page/Document.kescmShowOverset([flag]) - shows (default) or hides a large square-with-plus
-		// marker at the bottom-right (out port) of every OVERSET text frame, drawn screen-only at a
-		// zoom-independent size. Independent of the change marks. ExtendScript: app.documents[0].kescmShowOverset(true);
-		Method
-		{
-			kKESCMShowOversetMethodScriptElement,
-			e_KESCMShowOverset,
-			"kescm show overset",
-			"Shows or hides a large square+plus marker on every overset text frame (screen only).",
-			StringType,
-			"Status string",
-			{
-				p_KESCMShowOversetFlag, "show", "kTrue to show the overset marks (default), kFalse to hide them", BoolDefaultType(kTrue), kOptional,
-			}
-		}
-
 			// Page.kescmShowOriginal(sourcePage) - rasterizes sourcePage (old, may be in another document) at a high
 			// resolution on the fly and overlays it OPAQUELY over this page (a flat "show the old version" cover),
 			// regardless of where any change frames are. Call it for each page of the active spread to cover the
@@ -397,6 +364,26 @@ resource VersionedScriptElementInfo(2)
 				}
 			}
 
+			// Page/Document.kescmSetPrintMarks([flag]) - makes the change marks (red rings + change counts) appear when
+			// PRINTING. While ON, the marks also stay visible on screen at all times (WYSIWYG), independent of the
+			// middle-button press reveal. Pass false to make them screen-only again. The flag is optional (omit to turn
+			// printing ON). Marks data is untouched; only the print/visibility behavior changes.
+			// NOTE: File > Export > PDF does NOT dispatch the spread draw event, so marks do not appear there; to get a
+			// PDF with the marks, use File > Print to a "Print to PDF" printer (that goes through the print pipeline).
+			// ExtendScript:  app.documents[0].kescmSetPrintMarks(true);   // print the marks
+			Method
+			{
+				kKESCMSetPrintMarksMethodScriptElement,
+				e_KESCMSetPrintMarks,
+				"kescm set print marks",
+				"Makes the change marks appear when printing (and stay visible on screen while on).",
+				StringType,
+				"Status string",
+				{
+					p_KESCMPrintMarksFlag, "print", "kTrue to print the marks (default), kFalse to keep them screen-only", BoolDefaultType(kTrue), kOptional,
+				}
+			}
+
 			// Connects this plug-in's methods and properties to scripting.
 			Provider
 		{
@@ -405,15 +392,14 @@ resource VersionedScriptElementInfo(2)
 				Object{ kPageObjectScriptElement },
 				Method{ kKESCMMarkChangesMethodScriptElement },
 				Method{ kKESCMClearMarksMethodScriptElement },
-				Method{ kKESCMShowPageXMethodScriptElement },
-				Method{ kKESCMShowOversetMethodScriptElement },
 				Method{ kKESCMShowOriginalMethodScriptElement },
 				Method{ kKESCMHideOriginalMethodScriptElement },
 				Method{ kKESCMToastMethodScriptElement },
+				Method{ kKESCMSetPrintMarksMethodScriptElement },
 			}
 		}
 
-		// Document-level: bulk mark across all pages + clear + show/hide X (same provider boss, Document object).
+		// Document-level: bulk mark across all pages + clear + peek/print toggles (same provider boss, Document object).
 		Provider
 		{
 			kKESCMScriptProviderBoss,
@@ -421,13 +407,12 @@ resource VersionedScriptElementInfo(2)
 				Object{ kDocumentObjectScriptElement },
 				Method{ kKESCMMarkChangesDocMethodScriptElement },
 				Method{ kKESCMClearMarksMethodScriptElement },
-				Method{ kKESCMShowPageXMethodScriptElement },
-				Method{ kKESCMShowOversetMethodScriptElement },
 				Method{ kKESCMHideOriginalMethodScriptElement },
 				Method{ kKESCMShowOriginalUnderMouseMethodScriptElement },
 				Method{ kKESCMArmMousePeekMethodScriptElement },
 				Method{ kKESCMDisarmMousePeekMethodScriptElement },
 				Method{ kKESCMToastMethodScriptElement },
+				Method{ kKESCMSetPrintMarksMethodScriptElement },
 			}
 		}
 	}
