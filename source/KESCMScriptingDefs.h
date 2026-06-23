@@ -43,7 +43,8 @@ enum KESCMScriptEvents
 	e_KESCMHideOriginal   = 'eKGh',	// e=method K=Kohaku G=KESCM h=hide   : Page/Document.kescmHideOriginal() - hide the opaque OLD overlay
 	e_KESCMShowOriginalUnderMouse = 'eKGu',	// e=method K=Kohaku G=KESCM u=under-mouse: Document.kescmShowOriginalUnderMouse(sourceDoc) - overlay the spread UNDER THE MOUSE (arg reuses p_KESCMSourceDoc)
 	e_KESCMArmMousePeek    = 'eKGa',	// e=method K=Kohaku G=KESCM a=arm    : Document.kescmArmMousePeek(sourceDoc) - arm the middle-button peek (arg reuses p_KESCMSourceDoc)
-	e_KESCMDisarmMousePeek = 'eKGd'	// e=method K=Kohaku G=KESCM d=disarm : Document.kescmDisarmMousePeek() - disarm the middle-button peek and free the cache
+	e_KESCMDisarmMousePeek = 'eKGd',	// e=method K=Kohaku G=KESCM d=disarm : Document.kescmDisarmMousePeek() - disarm the middle-button peek and free the cache
+	e_KESCMToast           = 'eKGt'	// e=method K=Kohaku G=KESCM t=toast  : Page/Document.kescmToast(message) - brief auto-dismissing on-canvas message at screen center
 };
 
 // Property / Parameter IDs
@@ -52,7 +53,8 @@ enum KESCMScriptProperties
 	p_KESCMSourcePage   = 'pKGs',	// p=param K=Kohaku G=KESCM s=source page : compare-against (old) page, may be in another document
 	p_KESCMSourceDoc    = 'pKGD',	// p=param K=Kohaku G=KESCM D=source Doc  : compare-against (old) document
 	p_KESCMShowPageXFlag = 'pKGx',	// p=param K=Kohaku G=KESCM x=X-mark flag : kTrue to show the page X, kFalse to hide
-	p_KESCMShowOversetFlag = 'pKGo'	// p=param K=Kohaku G=KESCM o=overset flag: kTrue to show the overset marks, kFalse to hide
+	p_KESCMShowOversetFlag = 'pKGo',	// p=param K=Kohaku G=KESCM o=overset flag: kTrue to show the overset marks, kFalse to hide
+	p_KESCMToastMsg      = 'pKGt'	// p=param K=Kohaku G=KESCM t=toast text  : the message string shown briefly at screen center
 };
 
 

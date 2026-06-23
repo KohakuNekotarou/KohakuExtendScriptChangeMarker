@@ -65,7 +65,9 @@
 #include "IEvent.h"						// IEvent::kMButtonDn / kMButtonUp / GetType
 #include "IEventDispatcher.h"			// AddEventWatcher / EventTypeList
 #include "IStartupShutdownService.h"	// 起動時に watcher を開始
-#include "CreateObject.h"				// CreateObject2<IEventWatcher>
+#include "CreateObject.h"				// CreateObject2<IEventWatcher> / CreateObject2<IIdleTask>
+#include "IIdleTask.h"					// 一時トーストの自動消去タイマ(RunTask で消す)
+#include "IIdleTaskMgr.h"				// AddTask / RemoveTask(タイマ登録)
 #include "IToolBoxUtils.h"				// ツール切替(ミドル押下中だけハンドツール)
 #include "ITool.h"						// ITool
 #include "LayoutUIID.h"					// kGrabberHandToolBoss / kPointerToolBoss
@@ -132,13 +134,13 @@ static const PMReal kKESCMSlashR = 1.0, kKESCMSlashG = 0.0, kKESCMSlashB = 0.0;	
 static const PMReal kKESCMBackR  = 0.0, kKESCMBackG  = 0.0, kKESCMBackB  = 1.0;	// "\" 青
 
 // 変更数テキスト(各ページの変更=枠の数を「N chg」で表示)。常時表示(トグル無し。X廃止)。ズームで大きさ不変。
-// 位置=各ページ上端から少し下、ページ「内側」に横中央で置く。数字は細く(fill のみ)、白い縁(ハロー)付き。
-// 白縁=本体の前に白を太めのストロークで2度描き(線幅=文字サイズ×kKESCMCountHaloFrac)。ストロークは輪郭中心なので
-// 見える白縁は線幅の約半分。本体の赤fillが内側半分を覆い、外側に白リムが残る。
+// 位置=各ページ上端から少し下、ページ「内側」に横中央で置く。数字は赤fill＋細い赤ストロークでやや太字、白い縁(ハロー)付き。
+// 白縁=本体の前に白を太めのストロークで描き(線幅=文字サイズ×kKESCMCountHaloFrac)。ストロークは輪郭中心なので
+// 見える白縁は線幅の約半分。本体の赤fill＋赤ストロークが内側半分を覆い、外側に白リムが残る。
 static const PMReal kKESCMCountTextPx   = 20.0;	// 数字の文字サイズ(画面px)
 static const PMReal kKESCMCountInsetPx  = 6.0;	// ページ上端からの内側余白(画面px)
 static const PMReal kKESCMCountHaloFrac = 0.16;	// 白縁の太さ(文字サイズに対する比)。見える縁はこの約半分。大きいほど太い縁
-static const PMReal kKESCMCountBodyFrac = 0.03;	// 数字本体の太さ(赤ストローク幅, 文字サイズ比)。白縁より細くすると白リムが残る。0で最も細い(fillのみ)
+static const PMReal kKESCMCountBodyFrac = 0.06;	// 赤本体を太らせるストローク幅(文字サイズ比)。大きいほど太い赤文字。0でfillのみ(最も細い)
 // 数字の後ろに続く語(" chg")。小さめ・細め(fill のみ=ストローク無し)で添える。
 static const PMReal kKESCMCountWordPx   = 11.0;	// 語の文字サイズ(画面px)。数字より小さめ
 // 縦ドリフト抑制: ページ内に置く落とし込み量(画面px固定=inset+numPt)は縮小すると spread 座標で増大し
@@ -172,6 +174,11 @@ static const int32 kKESCMCountMergeRadius = 8;
 // 72dpi = 標準(非HiDPI)100%拡大でドキュメント1inch=72px と1:1一致する値。メモリ最軽量(A4で約2MB/頁)・
 // 押下時のラスタ化も最速。2x HiDPIで拡大して粗ければ 144 へ戻す。
 static const PMReal kKESCMOrigResolution = 72.0;
+
+// 一時トーストメッセージ(画面=可視領域の中央に少し出て自動で消える「ChangeMarker ON」等)。ズーム不変サイズ。
+static const PMReal kKESCMToastTextPx    = 36.0;	// 文字サイズ(画面px)
+static const PMReal kKESCMToastPadPx     = 16.0;	// 文字周りの内側余白(画面px)。大きいほど背景ボックスが広い
+static const uint32 kKESCMToastDefaultMs = 2500;	// 既定の表示時間(ms)。表示後この時間で自動的に消える
 
 
 //========================================================================================
@@ -272,6 +279,14 @@ public:
 	static bool16 sShowOriginal;						// べた載せ表示 ON/OFF(既定 OFF)
 	static PMReal sOrigScale;							// 旧版画像をラスタ化した時の content→window スケール(ズーム×デバイス倍率)。
 														// 再 peek 時にズームが変わっていたら作り直す基準。0=未設定
+	static PMReal sPeekOpacity;							// 覗き中(peek)の旧版べた載せの不透明度。Shift＋ミドル=1.0(不透明)/
+														// Ctrl＋ミドル=0.5(半透明)。(A2)描画ブロックが参照する
+
+	// 一時トースト(画面=可視領域の中央に少し出て自動で消えるメッセージ)。マーク等とは完全に独立。
+	// sToastDB のドキュメントの前面ビューにだけ描く。自動消去は IIdleTask(KESCMToastIdleTask)が担う。
+	static PMString   sToastMsg;		// 表示文字列
+	static bool16     sToastVisible;	// 表示中か(タイマで kFalse に戻す)
+	static IDataBase* sToastDB;			// トーストを描くドキュメント(前面)
 
 	// 距離変換 dist を使い、buf(ARGB)へリング(0<dist<=radius)を1パスで描く(★案A=膨張不要)。
 	// 各リング画素の色は、その位置の背景が赤っぽい(bgRed[idx])なら青、そうでなければ赤。
@@ -320,6 +335,10 @@ std::map<UID, KESCMOrigImage*> KESCMDrawEventHandler::sOrigImages;
 IDataBase* KESCMDrawEventHandler::sOrigDB = nil;
 bool16 KESCMDrawEventHandler::sShowOriginal = kFalse;	// 既定=非表示(kescmShowOriginal で ON)
 PMReal KESCMDrawEventHandler::sOrigScale = 0.0;	// ラスタ化時のズームスケール(0=未設定)
+PMReal KESCMDrawEventHandler::sPeekOpacity = 1.0;	// 既定=不透明(Shift peek)。Ctrl peek で 0.5 にする
+PMString   KESCMDrawEventHandler::sToastMsg;
+bool16     KESCMDrawEventHandler::sToastVisible = kFalse;	// 既定=非表示
+IDataBase* KESCMDrawEventHandler::sToastDB = nil;
 
 
 void KESCMDrawEventHandler::BuildRing(uint8* buf, int32 rb, int32 bpp, int32 wt, int32 ht,
@@ -644,11 +663,15 @@ ErrorCode KESCMDrawEventHandler::MakeEntry(const UIDRef& targetRef, const UIDRef
 					delete[] M;
 
 					// 初回リング(基準半径)を buf へ直接描く(dist 確保失敗時のみ透明クリアで安全に)。
+					// buf 確保失敗(nil)時はここでは触らない。描画側(HandleDrawEvent)が e->buf==nil で skip する。
 					e->buf = new uint8[(size_t)rbL * hl];
-					if (e->dist != nil)
-						BuildRing(e->buf, rbL, bppL, wl, hl, e->dist, BG, kKESCMBaseRadius);
-					else
-						memset(e->buf, 0, (size_t)rbL * hl);
+					if (e->buf != nil)
+					{
+						if (e->dist != nil)
+							BuildRing(e->buf, rbL, bppL, wl, hl, e->dist, BG, kKESCMBaseRadius);
+						else
+							memset(e->buf, 0, (size_t)rbL * hl);
+					}
 					e->rec.bounds.xMin = 0;             e->rec.bounds.yMin = 0;
 					e->rec.bounds.xMax = (int16)wl;     e->rec.bounds.yMax = (int16)hl;
 					e->rec.baseAddr     = e->buf;
@@ -902,6 +925,116 @@ static PMReal KESCMCountSizeMul(PMReal uiZoom)
 	return m;
 }
 
+// トースト用の文字列幅の概算(em 単位の合計)。SDK に「選択フォントで任意文字列を実測する」軽量 API が
+// 無いため、文字種別の代表値を合計して近似する(プロポーショナルフォントで一律 0.5em より実幅に近い)。
+// 大文字・記号は広め、小文字は中、スペースは狭め、非 ASCII(全角=CJK 等)は約 1em とみなす。
+static PMReal KESCMEstimateTextEm(const UTF16TextChar* buf, int32 n)
+{
+	PMReal sum = 0.0;
+	for (int32 i = 0; i < n; ++i)
+	{
+		const UTF16TextChar c = buf[i];
+		PMReal w;
+		if (c == 0x20)                      w = PMReal(0.30);	// 半角スペース
+		else if (c >= 0x41 && c <= 0x5A)    w = PMReal(0.80);	// 大文字 A-Z(広め。右端の詰まり対策で少し大きめ)
+		else if (c >= 0x61 && c <= 0x7A)    w = PMReal(0.50);	// 小文字 a-z
+		else if (c >= 0x30 && c <= 0x39)    w = PMReal(0.55);	// 数字 0-9
+		else if (c < 0x80)                  w = PMReal(0.50);	// その他 ASCII(記号等)
+		else                                w = PMReal(1.00);	// 非 ASCII(全角=CJK 等)
+		sum = sum + w;
+	}
+	return sum;
+}
+
+//========================================================================================
+// 一時トースト描画: 前面ビューの可視領域中央に、半透明の暗いボックス＋白文字でメッセージを描く。
+//   画面中央の content(pasteboard) 点を求め、それを含むスプレッドの描画イベントでだけ1回描く
+//   (複数スプレッドが見えていても二重に出さない)。サイズはズーム不変(画面px / sxr)。
+//========================================================================================
+static void KESCMDrawToast(IGraphicsPort* gPort, IDataBase* db, ISpread* spread, IControlView* view, PMReal sxr)
+{
+	if (!KESCMDrawEventHandler::sToastVisible)
+		return;
+	if (db == nil || db != KESCMDrawEventHandler::sToastDB)
+		return;
+	if (gPort == nil || spread == nil || view == nil || sxr <= 0)
+		return;
+
+	InterfacePtr<IPanorama> pano(KESCMQueryPanorama(view));
+	if (pano == nil)
+		return;
+
+	// 可視領域の中心(content=pasteboard 座標)を IPanorama から直接取得する。view と panorama が別ウィジェット
+	// でも確実(GetFrame の手計算が不要)。GetContentLocationAtFrameCenter() = 可視領域中心の content 座標。
+	PMPoint center = pano->GetContentLocationAtFrameCenter();
+	const PMReal cX = center.X();
+	const PMReal cY = center.Y();
+
+	// この中心が「このスプレッド」のいずれかのページ(pasteboard bbox)内にあるか? あれば content→spread の
+	// 平行移動を求める(spread は pasteboard 内で軸そろえ=平行移動のみ)。無ければ別スプレッドが描く。
+	const int32 np = spread->GetNumPages();
+	bool16 here = kFalse;
+	PMReal sX = 0, sY = 0;
+	for (int32 p = 0; p < np; ++p)
+	{
+		InterfacePtr<IGeometry> geo(db, spread->GetNthPageUID(p), UseDefaultIID());
+		if (geo == nil)
+			continue;
+		PMRect inner = geo->GetPathBoundingBox();
+		PMRect pb = inner;  PMMatrix mPB = ::InnerToPasteboardMatrix(geo);  mPB.Transform(&pb);
+		PMReal L = pb.Left(), R = pb.Right(), T = pb.Top(), B = pb.Bottom();
+		if (L > R) { PMReal t = L; L = R; R = t; }
+		if (T > B) { PMReal t = T; T = B; B = t; }
+		if (cX >= L && cX <= R && cY >= T && cY <= B)
+		{
+			PMRect sp = inner;  PMMatrix mS = ::InnerToSpreadMatrix(geo);  mS.Transform(&sp);
+			sX = cX + (sp.Left() - pb.Left());	// content → spread(平行移動)
+			sY = cY + (sp.Top()  - pb.Top());
+			here = kTrue;
+			break;
+		}
+	}
+	if (!here)
+		return;
+
+	PMString msg = KESCMDrawEventHandler::sToastMsg;
+	msg.SetTranslatable(kFalse);
+	const int32 nch = msg.NumUTF16TextChars();
+	if (nch <= 0)
+		return;
+	InterfacePtr<IFontMgr> fontMgr(GetExecutionContextSession(), UseDefaultIID());
+	InterfacePtr<IPMFont> theFont(fontMgr ? fontMgr->QueryFont(fontMgr->GetDefaultFontName()) : nil);
+	if (theFont == nil)
+		return;
+
+	const PMReal fpt   = kKESCMToastTextPx / sxr;			// 文字pt(ズーム不変)
+	const PMReal pad   = kKESCMToastPadPx  / sxr;
+	const UTF16TextChar* mbuf = msg.GrabUTF16Buffer(nil);	// 文字バッファ(幅見積もりと描画で共用)
+	const PMReal textW = fpt * KESCMEstimateTextEm(mbuf, nch);	// 文字種別の概算幅合計(大文字広め/小文字狭め)
+	const PMReal boxW  = textW + pad * PMReal(2.0);
+	const PMReal boxH  = fpt   + pad * PMReal(2.0);
+	const PMReal x0    = sX - boxW / PMReal(2.0);
+	const PMReal y0    = sY - boxH / PMReal(2.0);
+
+	AutoGSave ag(gPort);
+	// 背景: ほぼ不透明の暗いボックス(下の青線/ガイドが透けてまだらにならないよう不透明寄りに)。
+	gPort->setopacity(PMReal(0.92), kFalse);
+	gPort->setrgbcolor(PMReal(0.10), PMReal(0.10), PMReal(0.10));
+	gPort->rectfill(x0, y0, boxW, boxH);
+	// 細い白枠。
+	gPort->setopacity(PMReal(1.0), kFalse);
+	gPort->setrgbcolor(PMReal(1.0), PMReal(1.0), PMReal(1.0));
+	gPort->setlinewidth(PMReal(1.0) / sxr);
+	gPort->rectpath(x0, y0, boxW, boxH);
+	gPort->stroke();
+	// 白文字(中央)。show は baseline 左端基準。縦中央 ≒ y0 + pad + fpt*0.78。
+	gPort->selectfont(theFont, fpt);
+	gPort->setrgbcolor(PMReal(1.0), PMReal(1.0), PMReal(1.0));
+	const PMReal tx = sX - textW / PMReal(2.0);
+	const PMReal ty = y0 + pad + fpt * PMReal(0.78);
+	gPort->show(tx, ty, nch, mbuf, (IGraphicsPort::TextGraphicsFlags)(IGraphicsPort::kFillText));
+}
+
 bool16 KESCMDrawEventHandler::HandleDrawEvent(ClassID eventID, void* eventData)
 {
 	DrawEventData* ded = static_cast<DrawEventData*>(eventData);
@@ -911,8 +1044,8 @@ bool16 KESCMDrawEventHandler::HandleDrawEvent(ClassID eventID, void* eventData)
 		return kFalse;
 	if (ded->flags & IShape::kPreviewMode)	// スナップショット描画には乗らない(自己参照防止)
 		return kFalse;
-	// マークも overset も 旧版べた載せ も無ければ何もしない。
-	if (sEntries.empty() && !sShowOverset && !(sShowOriginal && !sOrigImages.empty()))
+	// マークも overset も 旧版べた載せ も トースト も無ければ何もしない。
+	if (sEntries.empty() && !sShowOverset && !(sShowOriginal && !sOrigImages.empty()) && !sToastVisible)
 		return kFalse;
 
 	GraphicsData* gd = ded->gd;
@@ -985,12 +1118,16 @@ bool16 KESCMDrawEventHandler::HandleDrawEvent(ClassID eventID, void* eventData)
 			PMMatrix m = ::InnerToSpreadMatrix(pageGeo);
 			m.Transform(&pr);								// → spread(=描画ポート)座標
 			AutoGSave ag(gPort);
-			gPort->setopacity(PMReal(1.0), kFalse);			// べた載せ=完全不透明
+			gPort->setopacity(sPeekOpacity, kFalse);		// Shift peek=1.0(不透明) / Ctrl peek=0.5(半透明)
 			gPort->translate(pr.Left(), pr.Top());
 			gPort->scale(pr.Width() / o->w, pr.Height() / o->h);	// 旧版画像をページ矩形にフィット
-			gPort->image(&o->rec, PMMatrix(), 0);			// 不透明べた載せ
+			gPort->image(&o->rec, PMMatrix(), 0);			// 旧版を sPeekOpacity で重ねる
 		}
 	}
+
+	// (A3) 一時トースト(画面中央) — マーク/旧版とは独立。前面ドキュメントの可視領域中央に1回描く。
+	// 覗き中(旧版べた載せ)や枠非表示でも常に出す(下の (B) の早期 return より前で描く)。
+	KESCMDrawToast(gPort, db, spread, zview, sxr);
 
 	// (B) 変更オーバーレイ(リング＋X＋変更数) — マーク済みドキュメントが現スプレッドの db と一致する時だけ。
 	// master 表示トグル(sMarksVisible)が OFF の間、またはこのスプレッドを覗き中(旧版べた載せ中)は描かない
@@ -1053,7 +1190,7 @@ bool16 KESCMDrawEventHandler::HandleDrawEvent(ClassID eventID, void* eventData)
 
 		// この頁の変更数「N chg」を常時表示(★Xは廃止・トグル無し=sShowPageX は参照しない)。リング画像の上に重ねる。
 		// 文字サイズは拡大率連動(画面px = 既定px × countMul、px→pt は /sxr)。framelabel 流: session→IFontMgr→
-		// 既定フォントを selectfont し show(数字=赤fill+stroke=太字、語=青fill のみ)。
+		// 既定フォントを selectfont し show(数字=白ストローク縁＋赤fill＋赤ストローク(やや太字)、語=青fill のみ)。
 		{
 			AutoGSave agx(gPort);
 			if (e->changeCount > 0)
@@ -1113,7 +1250,8 @@ bool16 KESCMDrawEventHandler::HandleDrawEvent(ClassID eventID, void* eventData)
 					gPort->show(startX, ty, numCh, numBuf,
 						(IGraphicsPort::TextGraphicsFlags)(IGraphicsPort::kStrokeText));
 
-					// 数字の本体: 赤。fill + 細い赤ストロークで程よい太さに(白縁より細い幅なので白リムは残る)。
+					// 数字の本体: 赤fill＋同色の細い赤ストロークで少し太らせる。ストロークは輪郭中心なので
+					// 半分が外へ膨らみ、白縁を僅かに侵食して赤を太く見せる(白縁は外側に残る=「赤文字に白枠」)。
 					gPort->setrgbcolor(kKESCMCountNumR, kKESCMCountNumG, kKESCMCountNumB);
 					gPort->setlinewidth(numPt * kKESCMCountBodyFrac);
 					gPort->show(startX, ty, numCh, numBuf,
@@ -1190,9 +1328,10 @@ static IDataBase* sPeekTargetDB = nil;	// 表示中(新)ドキュメント。使
 static IDataBase* sPeekSourceDB = nil;	// peek 中に重ねる旧ドキュメント。
 static bool16     sPeekArmed    = kFalse;
 
-// Shift＋ミドルクリックで peek(旧版べた載せ)。押下中だけ表示し、ミドルを離すと消す(Shift は離してもよい)。
-// 判定はミドル押下時に IEvent::ShiftKeyDown() を1回見るだけ。誤発火防止のダブルクリック判定は廃止。
-static bool16 sPeekActive        = kFalse;	// Shift+ミドルを押し込み中(=覗き表示中)か
+// Shift＋ミドル=旧版を不透明(100%)で / Ctrl(=Win, IEvent::CmdKeyDown)＋ミドル=旧版を 50% で重ねて peek。
+// 押下中だけ表示し、ミドルを離すと消す(修飾キーは離してもよい)。判定はミドル押下時に1回見るだけ。
+static const PMReal kKESCMPeekSemiOpacity = 0.5;	// Ctrl＋ミドル時の旧版の不透明度(0..1)
+static bool16 sPeekActive        = kFalse;	// Shift/Ctrl+ミドルを押し込み中(=覗き表示中)か
 static bool16 sSingleShowing     = kFalse;	// シングルのミドル押下中(=全マークを一時的に表示中)か。離すと隠す
 // ミドル押下中だけハンドツール(掴んで移動)に一時切替。離すと元のツールへ戻す。
 static ITool*  sSavedTool  = nil;	// 切替前のツール(ref を保持。Restore で Release)
@@ -1220,12 +1359,30 @@ static KESCMPeekResult KESCMPeekShowUnderMouse(IDataBase* targetDB, IDataBase* s
 		return kKESCMPeekNoView;
 
 	// 現在のズーム(content→window スケール=ズーム×デバイス倍率)から、画面と 1:1 になる解像度を決める。
-	// dpi = 72 × スケール。これで覗いた時のズームでくっきり表示される(100%でも拡大時でも)。
+	// dpi = 72 × スケール。1:1 のとき最も綺麗(画像px=画面px)。
 	PMReal curScale = view->GetContentToWindowMatrix().GetXScale();
 	if (curScale < 0) curScale = -curScale;
 	if (curScale <= 0) curScale = 1.0;
-	PMReal peekDpi = PMReal(72.0) * curScale;
-	if (peekDpi < 72.0)  peekDpi = 72.0;	// 縮小時でも最低限の品質は確保
+
+	// 【低ズームの下限=UI 50%】UIズーム(ユーザーに見える拡大率, デバイス倍率を含まない)が 50% を下回る時は
+	// 「50% 相当の解像度」で頭打ちにする。50%以上は画面と 1:1 のままくっきり。50%未満は画像が画面より高精細に
+	// なり、縮小blit(点サンプリング)で多少粗くなる(=10% などは汚くてよい、という方針)。下限を UI% で決めるので
+	// デバイス倍率に依らず、画面に見える 50% がそのまま境界になる。パノラマ不明時は 1:1(従来=全ズーム綺麗)。
+	PMReal effScale = curScale;
+	InterfacePtr<IPanorama> peekPano(KESCMQueryPanorama(view));
+	if (peekPano != nil)
+	{
+		const PMReal uiZoom = peekPano->GetXScaleFactor(kFalse);	// UIズーム(例: 0.5=50%)
+		if (uiZoom > 0)
+		{
+			const PMReal deviceScale = curScale / uiZoom;			// 画面デバイス倍率(=curScale/uiZoom)
+			const PMReal flooredZoom = (uiZoom < PMReal(0.5)) ? PMReal(0.5) : uiZoom;	// UI 50% で頭打ち
+			effScale = flooredZoom * deviceScale;
+		}
+	}
+
+	PMReal peekDpi = PMReal(72.0) * effScale;
+	if (peekDpi < 16.0)  peekDpi = 16.0;	// 安全下限(degenerate 回避。通常は効かない)
 	if (peekDpi > 300.0) peekDpi = 300.0;	// 過大メモリ防止(300dpi A4 ≒ 35MB/頁)
 
 	// マウス: 画面 → 窓 → コンテンツ(ペーストボード)座標。
@@ -1298,7 +1455,7 @@ static KESCMPeekResult KESCMPeekShowUnderMouse(IDataBase* targetDB, IDataBase* s
 			// ズームが変わっていたら(キャッシュ時と解像度が合わない)作り直す。差が2%以内なら再利用。
 			if (cached && KESCMDrawEventHandler::sOrigScale > 0)
 			{
-				PMReal d = curScale - KESCMDrawEventHandler::sOrigScale;
+				PMReal d = effScale - KESCMDrawEventHandler::sOrigScale;
 				if (d < 0) d = -d;
 				if (d > KESCMDrawEventHandler::sOrigScale * PMReal(0.02))
 					cached = kFalse;
@@ -1313,7 +1470,7 @@ static KESCMPeekResult KESCMPeekShowUnderMouse(IDataBase* targetDB, IDataBase* s
 			{
 				KESCMDrawEventHandler::DropAllOrig();		// 覗くのは1スプレッドだけ=他は破棄
 				KESCMDrawEventHandler::sOrigDB = targetDB;
-				KESCMDrawEventHandler::sOrigScale = curScale;	// このズームでラスタ化した記録(再 peek の作り直し判定用)
+				KESCMDrawEventHandler::sOrigScale = effScale;	// このラスタ化解像度を記録(再 peek の作り直し判定用)
 				for (int32 p = 0; p < np; ++p)
 				{
 					const int32 gi = globalIndex + p;
@@ -1377,17 +1534,122 @@ static void KESCMRestoreTool()
 	sHandActive = kFalse;
 }
 
-// Shift＋ミドル押下を検出したときの共通処理: 「保持中だけ覗く」状態に入り、マウス下スプレッドの旧版を表示。
-// 覗き中もハンドツールにして「旧状態で掴んで移動」できるように。
+// Shift／Ctrl＋ミドル押下を検出したときの共通処理: 「保持中だけ覗く」状態に入り、マウス下スプレッドの旧版を
+// opacity(Shift=1.0 不透明 / Ctrl=0.5 半透明)で表示。覗き中もハンドツールにして「旧状態で掴んで移動」できるように。
 // 覗き中は枠等(マーク)は不要なので sMarksVisible=kFalse のまま(既定が非表示)＝旧版だけが乗る。覗いている
 // スプレッドは旧版が覆い、他スプレッドも非表示なので、画面全体が枠なしの「旧版/現行のみ」になる。
-static void KESCMBeginPeekHold()
+static void KESCMBeginPeekHold(PMReal opacity)
 {
 	sPeekActive = kTrue;
+	KESCMDrawEventHandler::sPeekOpacity = opacity;	// 旧版の不透明度(描画時に (A2) ブロックが参照)
 	sSingleShowing = kFalse;
 	KESCMDrawEventHandler::sMarksVisible = kFalse;	// 覗き中は枠等を出さない(旧版だけ)
 	KESCMEnterHandTool();	// 旧状態で掴んで移動
 	KESCMPeekShowUnderMouse(sPeekTargetDB, sPeekSourceDB, nil, nil);
+}
+
+
+// トースト表示(後方で定義)。WatchEvent から呼ぶための前方宣言。
+static void KESCMShowToast(IDataBase* db, const PMString& msg, uint32 ms);
+
+// Alt＋ミドルクリック: マウス下スプレッドだけを再比較して枠(リング)を更新する(部分更新)。
+//   targetDB=新(arm 済み表示中) / sourceDB=旧(arm 済み比較相手)。新→旧ページは平坦通し番号で対応。
+//   ・各ページを MakeEntry で取り直し(編集後の差分に更新)。変化が無くなったページは古い枠を消す。
+//   ・旧版画像キャッシュ(sOrigImages)は古いので破棄(次の peek で作り直し)。
+//   見つかったスプレッドの index(0始まり)を outSpread に、変化ページ数を outChanged に返す。戻り=見つかったか。
+static bool16 KESCMRefreshSpreadUnderMouse(IDataBase* targetDB, IDataBase* sourceDB, int32* outSpread, int32* outChanged)
+{
+	if (outSpread)  *outSpread = -1;
+	if (outChanged) *outChanged = 0;
+	if (targetDB == nil || sourceDB == nil)
+		return kFalse;
+
+	InterfacePtr<IControlView> view(Utils<ILayoutUIUtils>()->QueryFrontView());
+	if (view == nil)
+		return kFalse;
+
+	// マウス: 画面 → 窓 → コンテンツ(ペーストボード)座標。
+	GSysPoint gm = Utils<IEventUtils>()->GetGlobalMouseLocation();
+	PMPoint pt((PMReal)gm.x, (PMReal)gm.y);
+	pt = view->GlobalToWindow(pt);
+	view->WindowToContentTransform(&pt);
+	const PMReal mx = pt.X(), my = pt.Y();
+
+	// 旧ドキュメントの平坦ページUID列(スプレッド順・ページ順)。
+	std::vector<UID> sPages;
+	KESCMCollectPageUIDs(sourceDB, sPages);
+
+	InterfacePtr<ISpreadList> spreadList(targetDB, targetDB->GetRootUID(), UseDefaultIID());
+	if (spreadList == nil)
+		return kFalse;
+
+	// マークの所属ドキュメントを合わせる(別 doc にマークがあった場合のみ総入れ替え=通常は一致で何もしない)。
+	if (KESCMDrawEventHandler::sDB != nil && KESCMDrawEventHandler::sDB != targetDB)
+		KESCMDrawEventHandler::DropAll();
+	KESCMDrawEventHandler::sDB = targetDB;
+
+	const int32 ns = spreadList->GetSpreadCount();
+	int32 globalIndex = 0;
+	for (int32 s = 0; s < ns; ++s)
+	{
+		InterfacePtr<ISpread> spread(targetDB, spreadList->GetNthSpreadUID(s), UseDefaultIID());
+		if (spread == nil)
+			continue;
+		const int32 np = spread->GetNumPages();
+
+		// マウスがこのスプレッドのいずれかのページ上にあるか?
+		bool16 inThis = kFalse;
+		for (int32 p = 0; p < np; ++p)
+		{
+			InterfacePtr<IGeometry> geo(targetDB, spread->GetNthPageUID(p), UseDefaultIID());
+			if (geo == nil)
+				continue;
+			PMRect bb = geo->GetPathBoundingBox();
+			PMMatrix m = ::InnerToPasteboardMatrix(geo);
+			m.Transform(&bb);
+			PMReal L = bb.Left(), R = bb.Right(), T = bb.Top(), B = bb.Bottom();
+			if (L > R) { PMReal t = L; L = R; R = t; }
+			if (T > B) { PMReal t = T; T = B; B = t; }
+			if (mx >= L && mx <= R && my >= T && my <= B) { inThis = kTrue; break; }
+		}
+
+		if (inThis)
+		{
+			// このスプレッドの各ページを再比較して枠を更新。新→旧は globalIndex で対応。
+			int32 changedCount = 0;
+			for (int32 p = 0; p < np; ++p)
+			{
+				const int32 gi = globalIndex + p;
+				if (gi >= (int32)sPages.size())
+					continue;
+				const UID tUID = spread->GetNthPageUID(p);
+				bool16 changed = kFalse;
+				KESCMDrawEventHandler::MakeEntry(UIDRef(targetDB, tUID), UIDRef(sourceDB, sPages[gi]), changed);
+				if (changed)
+					++changedCount;
+				else
+				{
+					// 変化が無くなったページ → 古い枠が残っていれば消す(更新で消えるべき)。
+					std::map<UID, KESCMOverlayEntry*>::iterator old = KESCMDrawEventHandler::sEntries.find(tUID);
+					if (old != KESCMDrawEventHandler::sEntries.end())
+					{ delete old->second; KESCMDrawEventHandler::sEntries.erase(old); }
+				}
+			}
+
+			// 旧版画像キャッシュは古いので破棄(次の peek で現ズームで作り直し)。
+			KESCMDrawEventHandler::DropAllOrig();
+
+			InterfacePtr<IDocument> doc(targetDB, targetDB->GetRootUID(), UseDefaultIID());
+			if (doc != nil)
+				Utils<ILayoutUtils>()->InvalidateViews(doc);
+
+			if (outSpread)  *outSpread = s;
+			if (outChanged) *outChanged = changedCount;
+			return kTrue;
+		}
+		globalIndex += np;
+	}
+	return kFalse;
 }
 
 
@@ -1464,13 +1726,32 @@ IEventDispatcher::EventTypeList KESCMPeekWatcher::WatchEvent(IEvent* e)
 	{
 		if (sPeekArmed && e->ShiftKeyDown())
 		{
-			// Shift＋ミドル押下: マウス下スプレッドの旧版べた載せ(peek)を開始。押下中だけ表示。
-			// 判定はこの押下時の Shift 状態のみ。以後 Shift を離しても変わらず、ミドルを離すと消える。
-			KESCMBeginPeekHold();
+			// Shift＋ミドル押下: マウス下スプレッドの旧版べた載せ(peek)を不透明(100%)で開始。押下中だけ表示。
+			// 判定はこの押下時の修飾キー状態のみ。以後キーを離しても変わらず、ミドルを離すと消える。
+			KESCMBeginPeekHold(PMReal(1.0));
 		}
-		else if (!e->ShiftKeyDown())
+		else if (sPeekArmed && e->CmdKeyDown())
 		{
-			// シングル動作(Shiftなしミドル押下中): 全マーク(リング＋X＋変更数＋オーバーセット)を「表示」にして、
+			// Ctrl(=Win, CmdKeyDown)＋ミドル押下: 同じ peek を 50% 透明で重ねる(現行ページと半々のゴースト比較)。
+			KESCMBeginPeekHold(kKESCMPeekSemiOpacity);
+		}
+		else if (sPeekArmed && e->OptionAltKeyDown())
+		{
+			// Alt(=Win, OptionAltKeyDown)＋ミドル押下(momentary): マウス下スプレッドだけ枠を再検出して更新。
+			// 旧版画像キャッシュは破棄(次 peek で作り直し)。完了したら「spread N updated」をトースト表示。
+			int32 sp = -1;
+			if (KESCMRefreshSpreadUnderMouse(sPeekTargetDB, sPeekSourceDB, &sp, nil))
+			{
+				PMString msg("spread ");
+				msg.SetTranslatable(kFalse);
+				msg.AppendNumber(sp + 1);	// スプレッド番号(1始まり)
+				msg.Append(" markers refreshed");
+				KESCMShowToast(sPeekTargetDB, msg, kKESCMToastDefaultMs);
+			}
+		}
+		else if (!e->ShiftKeyDown() && !e->CmdKeyDown() && !e->OptionAltKeyDown())
+		{
+			// シングル動作(修飾キーなしミドル押下中): 全マーク(リング＋変更数＋オーバーセット)を「表示」にして、
 			// ハンドツールに切替えて「枠を見ながら掴んで移動」できるようにする。離す(kMButtonUp)と非表示へ戻す。
 			// マークが何も無い(エントリも無く overset も OFF)時は反応しない=素のミドルクリックを邪魔しない。
 			const bool16 haveContent =
@@ -1483,7 +1764,7 @@ IEventDispatcher::EventTypeList KESCMPeekWatcher::WatchEvent(IEvent* e)
 				KESCMInvalidateMarksDoc();
 			}
 		}
-		// (Shift を押していて arm 未済 → 何もしない。Shift は peek 専用に予約)
+		// (Shift/Ctrl を押していて arm 未済 → 何もしない。Shift/Ctrl は peek 専用に予約)
 	}
 	else // kMButtonUp
 	{
@@ -1574,6 +1855,96 @@ void KESCMPeekStartup::Shutdown()
 
 
 //========================================================================================
+// KESCMToastIdleTask — 一時トーストの自動消去タイマ。
+//   KESCMShowToast() が AddTask(this, ms) で登録 → ms 後に RunTask が呼ばれてトーストを非表示にし
+//   再描画する。kEndOfTime を返して自分をキューから外す(タイマ本体オブジェクトはセッション中
+//   sToastTask に保持して再利用)。
+//========================================================================================
+static IIdleTask* sToastTask   = nil;	// タイマ本体(起動中に1度だけ生成して再利用)
+static bool16     sToastQueued = kFalse;	// タイマが現在キューに入っているか(二重 AddTask 防止)
+
+class KESCMToastIdleTask : public CPMUnknown<IIdleTask>
+{
+public:
+	KESCMToastIdleTask(IPMUnknown* boss) : CPMUnknown<IIdleTask>(boss) {}
+	~KESCMToastIdleTask() {}
+
+	virtual uint32 RunTask(uint32 appFlags, IdleTimer* timeCheck);
+	virtual void InstallTask(uint32 millisecsBeforeFirstRun);
+	virtual void UninstallTask();
+	virtual const char* TaskName() { return "KESCMToastIdleTask"; }
+};
+
+CREATE_PMINTERFACE(KESCMToastIdleTask, kKESCMToastIdleTaskImpl)
+
+uint32 KESCMToastIdleTask::RunTask(uint32 /*appFlags*/, IdleTimer* /*timeCheck*/)
+{
+	// トーストを消して再描画。対象ドキュメントが既に閉じていれば再描画はスキップ(ダングリング回避)。
+	KESCMDrawEventHandler::sToastVisible = kFalse;
+	IDataBase* db = KESCMDrawEventHandler::sToastDB;
+	KESCMDrawEventHandler::sToastDB = nil;
+	if (db != nil)
+	{
+		InterfacePtr<IApplication> app(GetExecutionContextSession()->QueryApplication());
+		InterfacePtr<IDocumentList> docList(app ? app->QueryDocumentList() : nil);
+		if (docList != nil && docList->FindDocByDataBase(db) != nil)
+		{
+			InterfacePtr<IDocument> doc(db, db->GetRootUID(), UseDefaultIID());
+			if (doc != nil)
+				Utils<ILayoutUtils>()->InvalidateViews(doc);
+		}
+	}
+	sToastQueued = kFalse;
+	return IIdleTask::kEndOfTime;	// 自分をキューから除去(オブジェクトは sToastTask に保持=次の表示で再利用)
+}
+
+void KESCMToastIdleTask::InstallTask(uint32 millisecsBeforeFirstRun)
+{
+	InterfacePtr<IIdleTaskMgr> mgr(GetExecutionContextSession(), UseDefaultIID());
+	if (mgr != nil)
+		mgr->AddTask(this, millisecsBeforeFirstRun);
+}
+
+void KESCMToastIdleTask::UninstallTask()
+{
+	InterfacePtr<IIdleTaskMgr> mgr(GetExecutionContextSession(), UseDefaultIID());
+	if (mgr != nil)
+		mgr->RemoveTask(this);
+}
+
+// 画面中央に msg を ms ミリ秒だけ表示し、その後自動で消す。db=描画するドキュメント(前面)。
+// 直近の表示タイマが生きていれば取り消して入れ直す(=最後の表示から ms 後に消える)。
+static void KESCMShowToast(IDataBase* db, const PMString& msg, uint32 ms)
+{
+	KESCMDrawEventHandler::sToastMsg = msg;
+	KESCMDrawEventHandler::sToastMsg.SetTranslatable(kFalse);
+	KESCMDrawEventHandler::sToastVisible = kTrue;
+	KESCMDrawEventHandler::sToastDB = db;
+
+	// 即時に1回描く。
+	if (db != nil)
+	{
+		InterfacePtr<IDocument> doc(db, db->GetRootUID(), UseDefaultIID());
+		if (doc != nil)
+			Utils<ILayoutUtils>()->InvalidateViews(doc);
+	}
+
+	// 自動消去タイマ(IIdleTask)。タイマ本体はセッション中1個を生成して再利用。
+	InterfacePtr<IIdleTaskMgr> mgr(GetExecutionContextSession(), UseDefaultIID());
+	if (mgr == nil)
+		return;
+	if (sToastTask == nil)
+		sToastTask = ::CreateObject2<IIdleTask>(kKESCMToastIdleTaskBoss);	// +1 ref, セッション保持
+	if (sToastTask == nil)
+		return;
+	if (sToastQueued)			// 直近のタイマを取り消して入れ直す(同一タスクの二重 AddTask は不可のため)
+		mgr->RemoveTask(sToastTask);
+	mgr->AddTask(sToastTask, ms);
+	sToastQueued = kTrue;
+}
+
+
+//========================================================================================
 // KESCMScriptProvider
 //   Page / Document オブジェクトに kescmMarkChanges / kescmMarkChangesDoc / kescmClearMarks を生やす。
 //========================================================================================
@@ -1616,6 +1987,9 @@ private:
 
 	// kescmDisarmMousePeek(): ミドルボタン peek を解除し、旧版べた載せを隠してキャッシュも解放。Document 対応。
 	ErrorCode DisarmMousePeek(ScriptID methodID, IScriptRequestData* data, IScript* parent);
+
+	// kescmToast(message): 画面中央に message を少し表示して自動で消す。Page/Document 対応。
+	ErrorCode Toast(ScriptID methodID, IScriptRequestData* data, IScript* parent);
 };
 
 CREATE_PMINTERFACE(KESCMScriptProvider, kKESCMScriptProviderImpl)
@@ -1655,6 +2029,9 @@ ErrorCode KESCMScriptProvider::HandleMethod(ScriptID methodID, IScriptRequestDat
 		break;
 	case e_KESCMDisarmMousePeek:
 		status = DisarmMousePeek(methodID, data, parent);
+		break;
+	case e_KESCMToast:
+		status = Toast(methodID, data, parent);
 		break;
 	default:
 		status = CScriptProvider::HandleMethod(methodID, data, parent);
@@ -2005,6 +2382,13 @@ ErrorCode KESCMScriptProvider::ArmMousePeek(ScriptID methodID, IScriptRequestDat
 	sSingleShowing = kFalse;
 	KESCMDrawEventHandler::sMarksVisible = kFalse;	// 既定(非表示)へ。arm 中も枠は押下中だけ表示
 
+	// 画面中央に「ChangeMarker ON」を少し表示(自動消去)。
+	{
+		PMString onMsg("ChangeMarker ON");
+		onMsg.SetTranslatable(kFalse);
+		KESCMShowToast(targetDB, onMsg, kKESCMToastDefaultMs);
+	}
+
 	PMString report("kescm: mouse peek armed (Shift+middle-click and hold over a spread)");
 	report.SetTranslatable(kFalse);
 	ScriptData rd; rd.SetPMString(report);
@@ -2036,7 +2420,39 @@ ErrorCode KESCMScriptProvider::DisarmMousePeek(ScriptID methodID, IScriptRequest
 			Utils<ILayoutUtils>()->InvalidateViews(doc);
 	}
 
+	// 画面中央に「ChangeMarker OFF」を少し表示(自動消去)。
+	{
+		PMString offMsg("ChangeMarker OFF");
+		offMsg.SetTranslatable(kFalse);
+		KESCMShowToast(db, offMsg, kKESCMToastDefaultMs);
+	}
+
 	PMString report("kescm: mouse peek disarmed");
+	report.SetTranslatable(kFalse);
+	ScriptData rd; rd.SetPMString(report);
+	data->AppendReturnData(parent, methodID, rd);
+	return kSuccess;
+}
+
+
+/* Toast
+   画面(=可視領域)の中央に message を少し表示し、約 2.5 秒後に自動で消す。Page でも Document でも可。
+   画面表示のみ・非永続。実描画は HandleDrawEvent、自動消去は KESCMToastIdleTask が担う。
+*/
+ErrorCode KESCMScriptProvider::Toast(ScriptID methodID, IScriptRequestData* data, IScript* parent)
+{
+	UIDRef ref = ::GetUIDRef(parent);
+	IDataBase* db = ref.GetDataBase();
+
+	ScriptData arg;
+	PMString msg;
+	if (data->ExtractRequestData(p_KESCMToastMsg, arg) == kSuccess)
+		arg.GetPMString(msg);
+	msg.SetTranslatable(kFalse);
+
+	KESCMShowToast(db, msg, kKESCMToastDefaultMs);
+
+	PMString report("kescm: toast shown");
 	report.SetTranslatable(kFalse);
 	ScriptData rd; rd.SetPMString(report);
 	data->AppendReturnData(parent, methodID, rd);

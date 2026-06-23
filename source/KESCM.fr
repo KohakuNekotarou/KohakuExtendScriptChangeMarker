@@ -134,6 +134,16 @@ resource ClassDescriptionTable(kSDKDefClassDescriptionTableResourceID)
 			IID_IK2SERVICEPROVIDER, kLazyStartupShutdownProviderImpl,
 		}
 	},
+
+	// Auto-dismissing on-canvas toast: an idle task that hides the toast message after a delay.
+	Class
+	{
+		kKESCMToastIdleTaskBoss,
+		kInvalidClass,
+		{
+			IID_IIDLETASK, kKESCMToastIdleTaskImpl,
+		}
+	},
 }}};
 
 /*  
@@ -371,6 +381,22 @@ resource VersionedScriptElementInfo(2)
 				{}
 			}
 
+			// Page/Document.kescmToast(message) - shows a brief message at the CENTER of the visible area that
+			// auto-dismisses after ~2.5s. Screen only, non-persistent.
+			// ExtendScript:  app.documents[0].kescmToast("ChangeMarker ON");
+			Method
+			{
+				kKESCMToastMethodScriptElement,
+				e_KESCMToast,
+				"kescm toast",
+				"Shows a brief auto-dismissing message at the center of the screen (screen only).",
+				StringType,
+				"Status string",
+				{
+					p_KESCMToastMsg, "message", "The text to show briefly at the center of the screen", StringType, kRequired,
+				}
+			}
+
 			// Connects this plug-in's methods and properties to scripting.
 			Provider
 		{
@@ -383,6 +409,7 @@ resource VersionedScriptElementInfo(2)
 				Method{ kKESCMShowOversetMethodScriptElement },
 				Method{ kKESCMShowOriginalMethodScriptElement },
 				Method{ kKESCMHideOriginalMethodScriptElement },
+				Method{ kKESCMToastMethodScriptElement },
 			}
 		}
 
@@ -400,6 +427,7 @@ resource VersionedScriptElementInfo(2)
 				Method{ kKESCMShowOriginalUnderMouseMethodScriptElement },
 				Method{ kKESCMArmMousePeekMethodScriptElement },
 				Method{ kKESCMDisarmMousePeekMethodScriptElement },
+				Method{ kKESCMToastMethodScriptElement },
 			}
 		}
 	}

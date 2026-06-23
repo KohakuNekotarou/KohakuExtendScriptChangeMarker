@@ -53,8 +53,8 @@ DECLARE_PMID(kClassIDSpace, kKESCMScriptProviderBoss, kKESCMPrefix + 3)
 DECLARE_PMID(kClassIDSpace, kKESCMDrawEventServiceBoss, kKESCMPrefix + 4)
 DECLARE_PMID(kClassIDSpace, kKESCMPeekWatcherBoss, kKESCMPrefix + 5)	// IEventWatcher: middle-button peek (snoop kMButtonDn/Up)
 DECLARE_PMID(kClassIDSpace, kKESCMPeekStartupBoss, kKESCMPrefix + 6)	// IStartupShutdown: starts the peek watcher at app launch
+DECLARE_PMID(kClassIDSpace, kKESCMToastIdleTaskBoss, kKESCMPrefix + 7)	// IIdleTask: auto-dismiss the on-canvas toast message
 //DECLARE_PMID(kClassIDSpace, kKESCMBoss, kKESCMPrefix + 6)
-//DECLARE_PMID(kClassIDSpace, kKESCMBoss, kKESCMPrefix + 7)
 //DECLARE_PMID(kClassIDSpace, kKESCMBoss, kKESCMPrefix + 8)
 //DECLARE_PMID(kClassIDSpace, kKESCMBoss, kKESCMPrefix + 9)
 //DECLARE_PMID(kClassIDSpace, kKESCMBoss, kKESCMPrefix + 10)
@@ -110,7 +110,7 @@ DECLARE_PMID(kImplementationIDSpace, kKESCMDrawEventSrvcImpl, kKESCMPrefix + 1)
 DECLARE_PMID(kImplementationIDSpace, kKESCMDrawEventHandlerImpl, kKESCMPrefix + 2)
 DECLARE_PMID(kImplementationIDSpace, kKESCMPeekWatcherImpl, kKESCMPrefix + 3)	// IEventWatcher impl (middle-button peek)
 DECLARE_PMID(kImplementationIDSpace, kKESCMPeekStartupImpl, kKESCMPrefix + 4)	// IStartupShutdown impl (starts the peek watcher)
-//DECLARE_PMID(kImplementationIDSpace, kKESCMImpl, kKESCMPrefix + 5)
+DECLARE_PMID(kImplementationIDSpace, kKESCMToastIdleTaskImpl, kKESCMPrefix + 5)	// IIdleTask impl (auto-dismiss toast)
 //DECLARE_PMID(kImplementationIDSpace, kKESCMImpl, kKESCMPrefix + 6)
 //DECLARE_PMID(kImplementationIDSpace, kKESCMImpl, kKESCMPrefix + 7)
 //DECLARE_PMID(kImplementationIDSpace, kKESCMImpl, kKESCMPrefix + 8)
@@ -195,6 +195,7 @@ DECLARE_PMID(kScriptInfoIDSpace, kKESCMHideOriginalMethodScriptElement, kKESCMPr
 DECLARE_PMID(kScriptInfoIDSpace, kKESCMShowOriginalUnderMouseMethodScriptElement, kKESCMPrefix + 8)
 DECLARE_PMID(kScriptInfoIDSpace, kKESCMArmMousePeekMethodScriptElement, kKESCMPrefix + 9)
 DECLARE_PMID(kScriptInfoIDSpace, kKESCMDisarmMousePeekMethodScriptElement, kKESCMPrefix + 10)
+DECLARE_PMID(kScriptInfoIDSpace, kKESCMToastMethodScriptElement, kKESCMPrefix + 11)
 
 // "About Plug-ins" sub-menu:
 #define kKESCMAboutMenuKey			kKESCMStringPrefix "kKESCMAboutMenuKey"
