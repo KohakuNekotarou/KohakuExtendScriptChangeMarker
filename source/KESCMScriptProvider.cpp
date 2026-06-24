@@ -13,14 +13,14 @@
 //     変化が無いページはエントリを作らない(マスクも持たない=描画でも即スキップ)。
 //
 //  API:
-//   Page.kescmMarkChanges(sourcePage):
-//     呼び出し元ページ(新)と sourcePage(旧, 別ドキュメント可)を 72dpi ARGB でラスタ化し、
-//     画素差分マスク→赤リングを作って、このページにエントリ登録(複数回呼ぶと貯まる)。
 //   Document.kescmMarkChangesDoc(sourceDoc):
-//     このドキュメントの全ページを sourceDoc の同じ番号のページと突き合わせ、変化ページ全部に
+//     このドキュメントの全ページを sourceDoc の同じ番号のページと CMYK 比較し、変化ページ全部に
 //     リングを付ける(総入れ替え)。ページ数が違う場合は重なる範囲のみ比較。
 //   Page/Document.kescmClearMarks():
 //     全エントリを破棄して再描画し、オーバーレイを消す。
+//   (旧版べた載せはミドルボタン peek = kescmArmMousePeek/kescmDisarmMousePeek に統合。
+//    トースト=kescmToast、印刷=kescmSetPrintMarks。単ページ版 kescmMarkChanges /
+//    手動 kescmShowOriginal/HideOriginal/ShowOriginalUnderMouse は 2026-06-24 に撤去。)
 //
 //  装飾(IPageItemAdornmentList)ではなく DrawEventHandler で描くので、書類モデルに一切
 //  触れない=.indd に保存されない(missing-plugin 警告も出ない)。
@@ -87,6 +87,7 @@
 #include "SnapshotUtilsEx.h"			// ページをオフスクリーン(ビットマップ)化
 #include "AGMImageAccessor.h"			// GetBounds() / GetBaseAddr() / GetAGMColorFamily()
 #include "GraphicsExternal.h"			// AGMImageRecord(自前で組んで blit する)
+#include "IXPUtils.h"					// 印刷用: CreateImagePaintServer / ReleasePaintServer(透明合成経由のリング描画)
 
 // STL:
 #include <map>
@@ -101,7 +102,7 @@
 //========================================================================================
 // チューニング定数
 //========================================================================================
-static const PMReal kKESCMRingTargetPx = 7.0;	// リングの目標太さ(画面px)。ズームに依らず一定に見せる
+static const PMReal kKESCMRingTargetPx = 9.0;	// リングの目標太さ(画面px)。ズームに依らず一定に見せる
 static const uint8 kKESCMRingAlpha = 180;	// リングのアルファ(0..255)。約71%不透明=半透明で下の実ページが透ける(小さいほど透明)
 // 変化判定: 常に CMYK でラスタ化して比較し、CMYK 4ch のどれかがこのしきい値を超えて違えば「変化」とする。
 // しきい値=0 は「どんな差も拾う」(=CMYK 1単位でも検出)。CMYK の微差は RGB へ変換すると丸めで消えるため、
@@ -794,13 +795,18 @@ ErrorCode KESCMDrawEventHandler::MakeOrigImage(const UIDRef& targetRef, const UI
 
 void KESCMDrawEventHandler::Register(IDrwEvtDispatcher* d)
 {
-	// スプレッド単位で配られる描画イベント。ポートは spread 座標。
+	// スプレッド単位で配られる描画イベント。ポートは spread 座標。枠/変更数はこちらで描く。
+	// トーストもこちらで描く=スプレッド/ペーストボード帯の「前面」分(帯外はクリップされる)。
 	d->RegisterHandler(ClassID(kEndSpreadMessage), this, kDEHLowestPriority);
+	// ウィンドウ単位(全スプレッド描画後に1回)。ポートは CTM=pasteboard。スプレッド/ペーストボードの
+	// 背面に来るため、トーストの「帯外=カンバス背景」分だけをこちらで描く(2系統併用で全域カバー)。
+	d->RegisterHandler(ClassID(kAfterLastSpreadDrawMessage), this, kDEHLowestPriority);
 }
 
 void KESCMDrawEventHandler::UnRegister(IDrwEvtDispatcher* d)
 {
 	d->UnRegisterHandler(ClassID(kEndSpreadMessage), this);
+	d->UnRegisterHandler(ClassID(kAfterLastSpreadDrawMessage), this);
 }
 
 
@@ -858,55 +864,44 @@ static PMReal KESCMEstimateTextEm(const UTF16TextChar* buf, int32 n)
 }
 
 //========================================================================================
-// 一時トースト描画: 前面ビューの可視領域中央に、半透明の暗いボックス＋白文字でメッセージを描く。
-//   画面中央の content(pasteboard) 点を求め、それを含むスプレッドの描画イベントでだけ1回描く
-//   (複数スプレッドが見えていても二重に出さない)。サイズはズーム不変(画面px / sxr)。
+// pasteboard 座標 → このスプレッドの spread 座標 への変換オフセット(= pasteboard - spread)。
+//   pasteboard 座標はドキュメント全体で1つ。スプレッドは pasteboard 上で(主に縦に)積まれ、各々が
+//   オフセットを持つ(spread[0] だけ偶然 0)。同一の inner 原点(0,0)を InnerToSpreadMatrix と
+//   InnerToPasteboardMatrix の両方で写し、その差を取ればこのスプレッドのオフセットになる。
+//   pasteboard 中心からこれを引けば、そのスプレッドの spread 座標における中心が得られる。
 //========================================================================================
-static void KESCMDrawToast(IGraphicsPort* gPort, IDataBase* db, ISpread* spread, IControlView* view, PMReal sxr)
+static PMPoint KESCMSpreadOffsetFromPasteboard(IDataBase* db, ISpread* spread)
 {
-	if (!KESCMDrawEventHandler::sToastVisible)
-		return;
-	if (db == nil || db != KESCMDrawEventHandler::sToastDB)
-		return;
-	if (gPort == nil || spread == nil || view == nil || sxr <= 0)
+	PMPoint off(0.0, 0.0);
+	if (db == nil || spread == nil || spread->GetNumPages() < 1)
+		return off;
+	InterfacePtr<IGeometry> pg(db, spread->GetNthPageUID(0), UseDefaultIID());
+	if (pg == nil)
+		return off;
+	PMMatrix mS = ::InnerToSpreadMatrix(pg);
+	PMMatrix mP = ::InnerToPasteboardMatrix(pg);
+	PMPoint ps(0.0, 0.0), pp(0.0, 0.0);
+	mS.Transform(&ps);
+	mP.Transform(&pp);
+	return PMPoint(pp.X() - ps.X(), pp.Y() - ps.Y());
+}
+
+//========================================================================================
+// 一時トースト描画: 指定中心(centerPort)に、半透明の暗いボックス＋白文字でメッセージを描く。
+//   中心は「呼び出すポートの座標系」で渡す:
+//     - kEndSpreadMessage(per-spread)        → spread 座標(スプレッド/ペーストボード帯の前面)
+//     - kAfterLastSpreadDrawMessage(ウィンドウ)→ pasteboard 座標(帯外=カンバス背景)
+//   この2系統を併用すると、各画素はどちらか一方が担当=二重描き無しで全域(スプレッド+ペースト
+//   ボード+カンバス)をカバーできる。可視/db/中心の有効性チェックは呼び出し側で済ませる。
+//   サイズはズーム不変(画面px / sxr)。
+//========================================================================================
+static void KESCMDrawToast(IGraphicsPort* gPort, PMReal sxr, const PMPoint& centerPort)
+{
+	if (gPort == nil || sxr <= 0)
 		return;
 
-	InterfacePtr<IPanorama> pano(KESCMQueryPanorama(view));
-	if (pano == nil)
-		return;
-
-	// 可視領域の中心(content=pasteboard 座標)を IPanorama から直接取得する。view と panorama が別ウィジェット
-	// でも確実(GetFrame の手計算が不要)。GetContentLocationAtFrameCenter() = 可視領域中心の content 座標。
-	PMPoint center = pano->GetContentLocationAtFrameCenter();
-	const PMReal cX = center.X();
-	const PMReal cY = center.Y();
-
-	// この中心が「このスプレッド」のいずれかのページ(pasteboard bbox)内にあるか? あれば content→spread の
-	// 平行移動を求める(spread は pasteboard 内で軸そろえ=平行移動のみ)。無ければ別スプレッドが描く。
-	const int32 np = spread->GetNumPages();
-	bool16 here = kFalse;
-	PMReal sX = 0, sY = 0;
-	for (int32 p = 0; p < np; ++p)
-	{
-		InterfacePtr<IGeometry> geo(db, spread->GetNthPageUID(p), UseDefaultIID());
-		if (geo == nil)
-			continue;
-		PMRect inner = geo->GetPathBoundingBox();
-		PMRect pb = inner;  PMMatrix mPB = ::InnerToPasteboardMatrix(geo);  mPB.Transform(&pb);
-		PMReal L = pb.Left(), R = pb.Right(), T = pb.Top(), B = pb.Bottom();
-		if (L > R) { PMReal t = L; L = R; R = t; }
-		if (T > B) { PMReal t = T; T = B; B = t; }
-		if (cX >= L && cX <= R && cY >= T && cY <= B)
-		{
-			PMRect sp = inner;  PMMatrix mS = ::InnerToSpreadMatrix(geo);  mS.Transform(&sp);
-			sX = cX + (sp.Left() - pb.Left());	// content → spread(平行移動)
-			sY = cY + (sp.Top()  - pb.Top());
-			here = kTrue;
-			break;
-		}
-	}
-	if (!here)
-		return;
+	const PMReal sX = centerPort.X();
+	const PMReal sY = centerPort.Y();
 
 	PMString msg = KESCMDrawEventHandler::sToastMsg;
 	msg.SetTranslatable(kFalse);
@@ -945,6 +940,85 @@ static void KESCMDrawToast(IGraphicsPort* gPort, IDataBase* db, ISpread* spread,
 	const PMReal ty = y0 + pad + fpt * PMReal(0.78);
 	gPort->show(tx, ty, nch, mbuf, (IGraphicsPort::TextGraphicsFlags)(IGraphicsPort::kFillText));
 }
+
+
+//========================================================================================
+// 印刷/PDF 用のリング描画。画面は image() blit でよいが(画素 alpha を honor する)、印刷のフラットナ
+// 経路は blit 画像の部分 alpha を honor せず枠が不透明になる。そこで transparencyeffect サンプルと
+// 同じ作法=リング形状を「グレーのアルファサーバ」にして純色のベクター fill を setopacity で半透明に
+// 描く(透明合成エンジンが honor する)。赤と青(背景適応)を保つため、赤画素・青画素それぞれのグレー
+// マスクで2回 fill する。呼び出し側で translate/scale 済み(user 空間 = 画像px)であること。
+//   e->buf は ARGB(先頭=alpha, 続いて R,G,B)。
+//========================================================================================
+static void KESCMDrawRingForPrint(IGraphicsPort* gPort, KESCMOverlayEntry* e)
+{
+	if (gPort == nil || e == nil || e->buf == nil || e->w <= 0 || e->h <= 0 || e->bpp < 4)
+		return;
+	// 透明合成ユーティリティ(アルファサーバ生成/解放に使う)。実行中アプリでは常在するが、
+	// transparencyeffect サンプル流に、取得できなければ何もしない(クラッシュ回避)。以後この1個を使い回す。
+	Utils<IXPUtils> xpUtils;
+	if (!xpUtils)
+		return;
+	const int32 w = e->w, h = e->h, rb = e->rowBytes, bpp = e->bpp;
+	const size_t N = (size_t)w * h;
+
+	// e->buf(ARGB)から、赤リング画素=255 / 青リング画素=255 の2枚のグレーマスクを作る。
+	uint8* maskR = new uint8[N];
+	uint8* maskB = new uint8[N];
+	if (maskR == nil || maskB == nil) { if (maskR) delete[] maskR; if (maskB) delete[] maskB; return; }
+	for (int32 y = 0; y < h; ++y)
+	{
+		const uint8* row = e->buf + (size_t)y * rb;
+		for (int32 x = 0; x < w; ++x)
+		{
+			const uint8* px  = row + (size_t)x * bpp;	// [alpha, R, G, B]
+			const size_t idx = (size_t)y * w + x;
+			if (px[0] != 0)								// リング画素(alpha!=0)
+			{
+				const bool16 blue = (px[3] > px[1]);	// B>R = 青(背景適応で青に切り替わった画素)
+				maskR[idx] = blue ? 0 : 255;
+				maskB[idx] = blue ? 255 : 0;
+			}
+			else { maskR[idx] = 0; maskB[idx] = 0; }
+		}
+	}
+
+	const PMReal op = kKESCMRingAlpha / PMReal(255.0);	// リングの半透明度(画面と同じ)
+	struct PassDef { uint8* buf; uint8 r, g, b; };
+	PassDef passes[2] = { { maskR, 255, 0, 0 }, { maskB, 0, 0, 255 } };	// 赤 / 青
+
+	for (int p = 0; p < 2; ++p)
+	{
+		// マスクを指すグレー(8bpp, alpha無し)の AGMImageRecord。アルファサーバは gray colorspace 必須。
+		AGMImageRecord mrec;
+		mrec.bounds.xMin = 0;            mrec.bounds.yMin = 0;
+		mrec.bounds.xMax = (int16)w;     mrec.bounds.yMax = (int16)h;
+		mrec.baseAddr     = passes[p].buf;
+		mrec.byteWidth    = w;								// 1byte/px, 行パディング無し
+		mrec.colorSpace   = (int16)kGrayColorSpace;
+		mrec.bitsPerPixel = 8;
+		mrec.decodeArray  = nil;
+		mrec.colorTab.numColors = 0;     mrec.colorTab.theColors = nil;
+
+		PMMatrix idm;										// 恒等。user 空間=画像px なので画素(x,y)→user(x,y)
+		AGMPaint* alphaPaint = xpUtils->CreateImagePaintServer(&mrec, &idm, 0, nil);
+		if (alphaPaint != nil)
+		{
+			AutoGSave ag(gPort);
+			gPort->SetAlphaServer(alphaPaint, kTrue, PMMatrix());	// 形状=リング画素(per-pixel)
+			gPort->setopacity(op, kFalse);							// 半透明(透明合成が honor)
+			gPort->setrgbcolor(passes[p].r / PMReal(255.0), passes[p].g / PMReal(255.0), passes[p].b / PMReal(255.0));
+			gPort->newpath();
+			gPort->rectpath(PMReal(0.0), PMReal(0.0), PMReal(w), PMReal(h));	// user 空間=画像px(呼び出し側で translate/scale 済)
+			gPort->fill();
+			xpUtils->ReleasePaintServer(alphaPaint);
+		}
+	}
+
+	delete[] maskR;
+	delete[] maskB;
+}
+
 
 bool16 KESCMDrawEventHandler::HandleDrawEvent(ClassID eventID, void* eventData)
 {
@@ -985,6 +1059,8 @@ bool16 KESCMDrawEventHandler::HandleDrawEvent(ClassID eventID, void* eventData)
 	PMReal countMul = 1.0;	// 変更数テキストのサイズ倍率(拡大率連動)。ビュー/パノラマ不明時は 1.0(=現状サイズ)
 	IControlView* zview = gd->GetView();
 	InterfacePtr<IPanorama> pano;	// 可視上端(縦位置)と UIズーム(文字倍率)の両方に使う。画面描画時のみ非nil
+	PMPoint centerPb(0.0, 0.0);		// 可視領域の中心(pasteboard 座標)。トーストの基準位置に使う
+	bool16  hasCenter = kFalse;		// 上記が有効か(panorama を辿れた=画面描画時のみ)
 	if (zview != nil)
 	{
 		PMMatrix toWin = zview->GetContentToWindowMatrix();	// content→window(画面px), 現ズーム
@@ -996,7 +1072,30 @@ bool16 KESCMDrawEventHandler::HandleDrawEvent(ClassID eventID, void* eventData)
 			// sxr(=ズーム×デバイス倍率)ではなくこちらでサイズ倍率を決める(ユーザー指定の 5%/100% に合わせる)。
 			const PMReal uiZoom = pano->GetXScaleFactor(kFalse);
 			countMul = KESCMCountSizeMul(uiZoom);
+			centerPb = pano->GetContentLocationAtFrameCenter();	// 可視中心(content=pasteboard 座標)
+			hasCenter = kTrue;
 		}
+	}
+
+	// ★印刷/PDF 時は「100% 表示の見た目」に固定する(ズーム連動を切る)。印刷ポートには view が無く
+	// sxr=0 / pano=nil になるので、実効 sxr=1.0(=100%・deviceScale 1 相当)と 100% の文字倍率を与える。
+	// これでリング太さ・数値サイズ・数値位置の各式が、画面 100% 表示時とちょうど同じ値になる(下流の
+	// ズーム適応式・フォールバック式をそのまま使い回せる)。画面描画(printing=false)は従来どおりズーム連動。
+	if (printing)
+	{
+		sxr = 1.0;
+		countMul = KESCMCountSizeMul(1.0);
+	}
+
+	// ★ウィンドウ単位イベント(全スプレッド描画後, CTM=pasteboard)= トーストの「帯外(カンバス背景)」担当。
+	// このポートはスプレッド/ペーストボードの背面に来るため、何も被さらないカンバス部分にだけ見える。
+	// スプレッド/ペーストボード帯の前面分は per-spread(kEndSpreadMessage)側で描く(下)。
+	// 枠/旧版/変更数もスプレッド単位側で描く。トーストは一時メッセージなので印刷/PDF には出さない。
+	if (eventID == ClassID(kAfterLastSpreadDrawMessage))
+	{
+		if (!printing && sToastVisible && db == sToastDB && hasCenter && sxr > 0)
+			KESCMDrawToast(gPort, sxr, centerPb);	// pasteboard 座標の中心へ直接
+		return kFalse;
 	}
 
 	// 今描いている「このスプレッド」を覗いている(旧版べた載せ中)か。覗きで旧版が乗るのはマウス下の1スプレッド
@@ -1039,11 +1138,16 @@ bool16 KESCMDrawEventHandler::HandleDrawEvent(ClassID eventID, void* eventData)
 		}
 	}
 
-	// (A3) 一時トースト(画面中央) — マーク/旧版とは独立。前面ドキュメントの可視領域中央に1回描く。
-	// 覗き中(旧版べた載せ)や枠非表示でも常に出す(下の (B) の早期 return より前で描く)。
-	// トーストは一時的な画面メッセージなので印刷/PDF には出さない。
-	if (!printing)
-		KESCMDrawToast(gPort, db, spread, zview, sxr);
+	// (A3) トースト — スプレッド/ペーストボード帯の「前面」に出すため per-spread(spread座標)ポートでも描く。
+	// このポートは帯にクリップされる(帯外は欠ける)ので、帯外=カンバスは kAfterLastSpreadDrawMessage 側が担う。
+	// window 中心(centerPb=pasteboard座標)をこのスプレッドのオフセット分だけ引いて spread 座標の中心へ変換する。
+	// per-spread は可視スプレッドごとに発火するので、箱が複数スプレッドにまたがっても各帯で前面に出る。
+	if (!printing && sToastVisible && db == sToastDB && hasCenter && sxr > 0)
+	{
+		PMPoint off = KESCMSpreadOffsetFromPasteboard(db, spread);
+		PMPoint cS(centerPb.X() - off.X(), centerPb.Y() - off.Y());
+		KESCMDrawToast(gPort, sxr, cS);
+	}
 
 	// (B) 変更オーバーレイ(リング＋変更数) — マーク済みドキュメントが現スプレッドの db と一致する時だけ。
 	// master 表示トグル(sMarksVisible)が OFF の間、またはこのスプレッドを覗き中(旧版べた載せ中)は描かない
@@ -1101,8 +1205,14 @@ bool16 KESCMDrawEventHandler::HandleDrawEvent(ClassID eventID, void* eventData)
 		{
 			AutoGSave ag(gPort);
 			gPort->translate(pr.Left(), pr.Top());				// ページ左上へ
-			gPort->scale(pr.Width() / iw, pr.Height() / ih);	// リング画像をページ矩形にフィット
-			gPort->image(&e->rec, PMMatrix(), 0);				// 自前レコード(buf を指す)を blit
+			gPort->scale(pr.Width() / iw, pr.Height() / ih);	// 画像px → ページ矩形にフィット
+			// ★印刷/PDF 時は image() blit だと枠が不透明になる(フラットナが画像の部分 alpha を honor しない)。
+			// アルファサーバ＋純色ベクター fill＋setopacity で半透明に描く(透明合成エンジンが honor)。
+			// 画面描画(printing=false)は従来の ARGB blit のまま(画素 alpha を honor=検証済みの見た目を維持)。
+			if (printing)
+				KESCMDrawRingForPrint(gPort, e);
+			else
+				gPort->image(&e->rec, PMMatrix(), 0);			// 自前レコード(buf を指す)を blit
 		}
 
 		// この頁の変更数「N chg」を常時表示(常時・トグル無し)。リング画像の上に重ねる。
@@ -1862,7 +1972,8 @@ static void KESCMShowToast(IDataBase* db, const PMString& msg, uint32 ms)
 
 //========================================================================================
 // KESCMScriptProvider
-//   Page / Document オブジェクトに kescmMarkChanges / kescmMarkChangesDoc / kescmClearMarks を生やす。
+//   Page / Document オブジェクトに kescmMarkChangesDoc / kescmClearMarks / kescmArmMousePeek /
+//   kescmDisarmMousePeek / kescmToast / kescmSetPrintMarks を生やす。
 //========================================================================================
 class KESCMScriptProvider : public CScriptProvider
 {
@@ -1873,24 +1984,11 @@ public:
 	virtual ErrorCode HandleMethod(ScriptID methodID, IScriptRequestData* data, IScript* parent);
 
 private:
-	// kescmMarkChanges(sourcePage): このページ1枚にエントリを追加(複数回呼ぶと貯まる)。
-	ErrorCode MarkChanges(ScriptID methodID, IScriptRequestData* data, IScript* parent);
-
 	// kescmMarkChangesDoc(sourceDoc): このドキュメント全ページを sourceDoc と突き合わせて総入れ替え。
 	ErrorCode MarkChangesDoc(ScriptID methodID, IScriptRequestData* data, IScript* parent);
 
 	// kescmClearMarks(): オーバーレイを全消去。
 	ErrorCode ClearMarks(ScriptID methodID, IScriptRequestData* data, IScript* parent);
-
-	// kescmShowOriginal(sourcePage): このページに sourcePage(旧)の画像を高解像度で生成し不透明べた載せ(表示ON)。
-	ErrorCode ShowOriginal(ScriptID methodID, IScriptRequestData* data, IScript* parent);
-
-	// kescmHideOriginal(): 旧版べた載せの表示を OFF(画像キャッシュは保持。再表示は即時)。Page/Document 両対応。
-	ErrorCode HideOriginal(ScriptID methodID, IScriptRequestData* data, IScript* parent);
-
-	// kescmShowOriginalUnderMouse(sourceDoc): マウスが乗っているスプレッドを判定し、その各ページに sourceDoc の
-	// 同インデックスのページ画像を不透明べた載せ(そのスプレッドだけ保持)。Document 対応。
-	ErrorCode ShowOriginalUnderMouse(ScriptID methodID, IScriptRequestData* data, IScript* parent);
 
 	// kescmArmMousePeek(sourceDoc): ミドルボタン peek を arm(比較相手の旧ドキュメントを登録)。Document 対応。
 	ErrorCode ArmMousePeek(ScriptID methodID, IScriptRequestData* data, IScript* parent);
@@ -1913,23 +2011,11 @@ ErrorCode KESCMScriptProvider::HandleMethod(ScriptID methodID, IScriptRequestDat
 	ErrorCode status = kFailure;
 	switch (methodID.Get())
 	{
-	case e_KESCMMarkChanges:
-		status = MarkChanges(methodID, data, parent);
-		break;
 	case e_KESCMMarkChangesDoc:
 		status = MarkChangesDoc(methodID, data, parent);
 		break;
 	case e_KESCMClearMarks:
 		status = ClearMarks(methodID, data, parent);
-		break;
-	case e_KESCMShowOriginal:
-		status = ShowOriginal(methodID, data, parent);
-		break;
-	case e_KESCMHideOriginal:
-		status = HideOriginal(methodID, data, parent);
-		break;
-	case e_KESCMShowOriginalUnderMouse:
-		status = ShowOriginalUnderMouse(methodID, data, parent);
 		break;
 	case e_KESCMArmMousePeek:
 		status = ArmMousePeek(methodID, data, parent);
@@ -1947,53 +2033,6 @@ ErrorCode KESCMScriptProvider::HandleMethod(ScriptID methodID, IScriptRequestDat
 		status = CScriptProvider::HandleMethod(methodID, data, parent);
 	}
 	return status;
-}
-
-
-/* MarkChanges
-   呼び出し元ページ(parent=新)と引数 sourcePage(旧, 別ドキュメント可)を比較し、変化があれば
-   このページ用のエントリを追加する(置換)。複数回呼べば複数ページに貯まる。
-*/
-ErrorCode KESCMScriptProvider::MarkChanges(ScriptID methodID, IScriptRequestData* data, IScript* parent)
-{
-	UIDRef targetRef = ::GetUIDRef(parent);
-	IDataBase* targetDB = targetRef.GetDataBase();
-	if (targetDB == nil || targetRef.GetUID() == kInvalidUID)
-		return kFailure;
-
-	ScriptData arg;
-	if (data->ExtractRequestData(p_KESCMSourcePage, arg) != kSuccess)
-		return kFailure;
-	InterfacePtr<IScript> srcScript(arg.QueryObject());
-	if (srcScript == nil)
-		return kFailure;
-	UIDRef sourceRef = ::GetUIDRef(srcScript);
-	if (sourceRef.GetDataBase() == nil || sourceRef.GetUID() == kInvalidUID)
-		return kFailure;
-
-	// 別ドキュメントを対象にしたら作り直す(UIDはdb内のみ一意)。
-	if (KESCMDrawEventHandler::sDB != nil && KESCMDrawEventHandler::sDB != targetDB)
-		KESCMDrawEventHandler::DropAll();
-	KESCMDrawEventHandler::sDB = targetDB;
-
-	bool16 changed = kFalse;
-	ErrorCode ec = KESCMDrawEventHandler::MakeEntry(targetRef, sourceRef, changed);
-
-	// 即時再描画(ズームを跨がないで反映)。何も付けない=書類が dirty にならない。
-	InterfacePtr<IDocument> doc(targetDB, targetDB->GetRootUID(), UseDefaultIID());
-	if (doc != nil)
-		Utils<ILayoutUtils>()->InvalidateViews(doc);
-
-	PMString report;
-	report.SetTranslatable(kFalse);
-	if (ec == kSuccess)
-		report.Append(changed ? "kescm: marked (changed)" : "kescm: no change on this page");
-	else
-		report.Append("kescm: failed to rasterize");
-
-	ScriptData rd; rd.SetPMString(report);
-	data->AppendReturnData(parent, methodID, rd);
-	return kSuccess;
 }
 
 
@@ -2104,124 +2143,6 @@ ErrorCode KESCMScriptProvider::SetPrintMarks(ScriptID methodID, IScriptRequestDa
 	PMString report;
 	report.SetTranslatable(kFalse);
 	report.Append(flag ? "kescm: marks will print (and stay visible on screen)" : "kescm: marks are screen-only (won't print)");
-	ScriptData rd; rd.SetPMString(report);
-	data->AppendReturnData(parent, methodID, rd);
-	return kSuccess;
-}
-
-
-/* ShowOriginal
-   呼び出し元ページ(parent=新)に、引数 sourcePage(旧, 別ドキュメント可)の画像を高解像度でその場生成し、
-   不透明べた載せで重ねる(表示ON)。スプレッドの各ページに対して呼べば、そのスプレッド全体が旧版で覆われる。
-   生成するオフスクリーンは常に1枚=即破棄なので安全。マーク(リング)とは独立。
-*/
-ErrorCode KESCMScriptProvider::ShowOriginal(ScriptID methodID, IScriptRequestData* data, IScript* parent)
-{
-	UIDRef targetRef = ::GetUIDRef(parent);
-	IDataBase* targetDB = targetRef.GetDataBase();
-	if (targetDB == nil || targetRef.GetUID() == kInvalidUID)
-		return kFailure;
-
-	ScriptData arg;
-	if (data->ExtractRequestData(p_KESCMSourcePage, arg) != kSuccess)
-		return kFailure;
-	InterfacePtr<IScript> srcScript(arg.QueryObject());
-	if (srcScript == nil)
-		return kFailure;
-	UIDRef sourceRef = ::GetUIDRef(srcScript);
-	if (sourceRef.GetDataBase() == nil || sourceRef.GetUID() == kInvalidUID)
-		return kFailure;
-
-	// 別ドキュメントを覗き始めたら旧版キャッシュを作り直す(UIDはdb内のみ一意)。
-	if (KESCMDrawEventHandler::sOrigDB != nil && KESCMDrawEventHandler::sOrigDB != targetDB)
-		KESCMDrawEventHandler::DropAllOrig();
-	KESCMDrawEventHandler::sOrigDB = targetDB;
-
-	ErrorCode ec = KESCMDrawEventHandler::MakeOrigImage(targetRef, sourceRef);
-	KESCMDrawEventHandler::sShowOriginal = kTrue;
-
-	InterfacePtr<IDocument> doc(targetDB, targetDB->GetRootUID(), UseDefaultIID());
-	if (doc != nil)
-		Utils<ILayoutUtils>()->InvalidateViews(doc);
-
-	PMString report;
-	report.SetTranslatable(kFalse);
-	report.Append(ec == kSuccess ? "kescm: original shown on this page" : "kescm: failed to rasterize original");
-	ScriptData rd; rd.SetPMString(report);
-	data->AppendReturnData(parent, methodID, rd);
-	return kSuccess;
-}
-
-
-/* HideOriginal
-   旧版べた載せの表示を OFF にする(画像キャッシュは保持＝再表示は即時、メモリ開放は kescmClearMarks)。
-   Page でも Document でも可。
-*/
-ErrorCode KESCMScriptProvider::HideOriginal(ScriptID methodID, IScriptRequestData* data, IScript* parent)
-{
-	KESCMDrawEventHandler::sShowOriginal = kFalse;
-
-	UIDRef ref = ::GetUIDRef(parent);
-	IDataBase* db = ref.GetDataBase();
-	if (db != nil)
-	{
-		InterfacePtr<IDocument> doc(db, db->GetRootUID(), UseDefaultIID());
-		if (doc != nil)
-			Utils<ILayoutUtils>()->InvalidateViews(doc);
-	}
-
-	PMString report("kescm: original hidden");
-	report.SetTranslatable(kFalse);
-	ScriptData rd; rd.SetPMString(report);
-	data->AppendReturnData(parent, methodID, rd);
-	return kSuccess;
-}
-
-
-/* ShowOriginalUnderMouse
-   いま「マウスが乗っているスプレッド」(アクティブ・スプレッドではない)を前面レイアウトビューから判定し、
-   そのスプレッドの各ページを sourceDoc の同じ通し番号のページ画像で不透明べた載せする(そのスプレッドだけ保持)。
-   マウス位置 → 前面ビューでコンテンツ(ペーストボード)座標へ変換 → 各ページの InnerToPasteboard 矩形で内外判定。
-*/
-ErrorCode KESCMScriptProvider::ShowOriginalUnderMouse(ScriptID methodID, IScriptRequestData* data, IScript* parent)
-{
-	UIDRef targetDocRef = ::GetUIDRef(parent);
-	IDataBase* targetDB = targetDocRef.GetDataBase();
-	if (targetDB == nil)
-		return kFailure;
-
-	ScriptData arg;
-	if (data->ExtractRequestData(p_KESCMSourceDoc, arg) != kSuccess)
-		return kFailure;
-	InterfacePtr<IScript> srcScript(arg.QueryObject());
-	if (srcScript == nil)
-		return kFailure;
-	UIDRef srcDocRef = ::GetUIDRef(srcScript);
-	IDataBase* sourceDB = srcDocRef.GetDataBase();
-	if (sourceDB == nil)
-		return kFailure;
-
-	// マウス下スプレッドの検出・旧版べた載せは共有ヘルパに委譲(ミドルボタン peek と同じ経路)。
-	int32 foundSpread = -1, capturedPages = 0;
-	KESCMPeekResult res = KESCMPeekShowUnderMouse(targetDB, sourceDB, &foundSpread, &capturedPages);
-
-	PMString report;
-	report.SetTranslatable(kFalse);
-	if (res == kKESCMPeekShown)
-	{
-		report.Append("kescm: original under mouse (spread ");
-		report.AppendNumber(foundSpread);
-		report.Append(", ");
-		report.AppendNumber(capturedPages);
-		report.Append(" pages)");
-	}
-	else if (res == kKESCMPeekNoChange)
-		report.Append("kescm: spread under mouse has no changes (skipped)");
-	else if (res == kKESCMPeekNoView)
-		report.Append("kescm: no front layout view");
-	else
-		report.Append("kescm: mouse not over a spread");
-
 	ScriptData rd; rd.SetPMString(report);
 	data->AppendReturnData(parent, methodID, rd);
 	return kSuccess;

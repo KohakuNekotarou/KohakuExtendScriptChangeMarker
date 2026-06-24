@@ -219,25 +219,6 @@ resource VersionedScriptElementInfo(2)
 	
 	// Elements
 	{
-		// Page.kescmMarkChanges(sourcePage) - rasterizes BOTH this page (new) and sourcePage (old, may be in
-		// ANOTHER document) at 72dpi ARGB, detects changed pixels, and overlays a semi-transparent RED RING
-		// around each change. The change itself and the rest stay TRANSPARENT (the live page shows through).
-		// The ring thickness stays constant on screen (recomputed from the zoom at draw time). Screen only,
-		// non-persistent (nothing is stored in the .indd).
-		// ExtendScript:  doc1.spreads[0].pages[0].kescmMarkChanges(doc2.spreads[0].pages[0]);
-		Method
-		{
-			kKESCMMarkChangesMethodScriptElement,
-			e_KESCMMarkChanges,
-			"kescm mark changes",
-			"Marks the changes between this page and the given page with a red ring overlay (screen only).",
-			StringType,
-			"Status string",
-			{
-				p_KESCMSourcePage, "KESCM source page", "The page to compare against this one (any document)", ObjectType(kPageObjectScriptElement), kRequired,
-			}
-		}
-
 		// Page.kescmClearMarks() - removes the change-mark overlay shown on this page.
 		// ExtendScript:  doc1.spreads[0].pages[0].kescmClearMarks();
 		Method
@@ -267,55 +248,6 @@ resource VersionedScriptElementInfo(2)
 				p_KESCMSourceDoc, "KESCM source document", "The document to compare against (page i vs page i)", ObjectType(kDocumentObjectScriptElement), kRequired,
 			}
 		}
-
-			// Page.kescmShowOriginal(sourcePage) - rasterizes sourcePage (old, may be in another document) at a high
-			// resolution on the fly and overlays it OPAQUELY over this page (a flat "show the old version" cover),
-			// regardless of where any change frames are. Call it for each page of the active spread to cover the
-			// whole spread. The image is kept until kescmHideOriginal()/kescmClearMarks(). Screen only, non-persistent.
-			// ExtendScript:  doc1.spreads[0].pages[0].kescmShowOriginal(doc2.spreads[0].pages[0]);
-			Method
-			{
-				kKESCMShowOriginalMethodScriptElement,
-				e_KESCMShowOriginal,
-				"kescm show original",
-				"Overlays the old (compare-against) page image opaquely over this page (screen only).",
-				StringType,
-				"Status string",
-				{
-					p_KESCMSourcePage, "KESCM source page", "The old page whose image is overlaid (any document)", ObjectType(kPageObjectScriptElement), kRequired,
-				}
-			}
-
-			// Page/Document.kescmHideOriginal() - hides the opaque old-version overlay (the cached images are kept,
-			// so re-showing is instant; memory is freed by kescmClearMarks). Screen only.
-			// ExtendScript:  app.documents[0].kescmHideOriginal();
-			Method
-			{
-				kKESCMHideOriginalMethodScriptElement,
-				e_KESCMHideOriginal,
-				"kescm hide original",
-				"Hides the opaque old-version overlay (screen only).",
-				StringType,
-				"Status string",
-				{}
-			}
-
-			// Document.kescmShowOriginalUnderMouse(sourceDoc) - finds the spread UNDER THE MOUSE CURSOR (not the active
-			// spread) in the frontmost layout view, and overlays each of its pages opaquely with the matching page
-			// (by document page index) of sourceDoc, rasterized on the fly at high resolution. Only that spread is kept.
-			// ExtendScript:  app.documents[0].kescmShowOriginalUnderMouse(app.documents[1]);
-			Method
-			{
-				kKESCMShowOriginalUnderMouseMethodScriptElement,
-				e_KESCMShowOriginalUnderMouse,
-				"kescm show original under mouse",
-				"Overlays the old version of the spread under the mouse cursor (screen only).",
-				StringType,
-				"Status string",
-				{
-					p_KESCMSourceDoc, "KESCM source document", "The old document whose page images are overlaid (page i vs page i)", ObjectType(kDocumentObjectScriptElement), kRequired,
-				}
-			}
 
 			// Document.kescmArmMousePeek(sourceDoc) - arms the middle-button "peek". After arming, holding the
 			// MIDDLE mouse button overlays the OLD version of the spread under the cursor (rasterized on the fly);
@@ -390,10 +322,7 @@ resource VersionedScriptElementInfo(2)
 			kKESCMScriptProviderBoss,	// provider boss ID
 			{
 				Object{ kPageObjectScriptElement },
-				Method{ kKESCMMarkChangesMethodScriptElement },
 				Method{ kKESCMClearMarksMethodScriptElement },
-				Method{ kKESCMShowOriginalMethodScriptElement },
-				Method{ kKESCMHideOriginalMethodScriptElement },
 				Method{ kKESCMToastMethodScriptElement },
 				Method{ kKESCMSetPrintMarksMethodScriptElement },
 			}
@@ -407,8 +336,6 @@ resource VersionedScriptElementInfo(2)
 				Object{ kDocumentObjectScriptElement },
 				Method{ kKESCMMarkChangesDocMethodScriptElement },
 				Method{ kKESCMClearMarksMethodScriptElement },
-				Method{ kKESCMHideOriginalMethodScriptElement },
-				Method{ kKESCMShowOriginalUnderMouseMethodScriptElement },
 				Method{ kKESCMArmMousePeekMethodScriptElement },
 				Method{ kKESCMDisarmMousePeekMethodScriptElement },
 				Method{ kKESCMToastMethodScriptElement },

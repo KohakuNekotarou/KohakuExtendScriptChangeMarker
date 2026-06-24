@@ -34,14 +34,14 @@ DECLARE_GUID(CPrefs_CLSID, kCPrefs_CLSID);
 // Method IDs
 enum KESCMScriptEvents
 {
-	e_KESCMMarkChanges    = 'eKGm',	// e=method K=Kohaku G=KESCM m=mark  : Page.kescmMarkChanges(sourcePage)
 	e_KESCMClearMarks     = 'eKGc',	// e=method K=Kohaku G=KESCM c=clear : Page.kescmClearMarks()
 	e_KESCMMarkChangesDoc = 'eKGD',	// e=method K=Kohaku G=KESCM D=Doc   : Document.kescmMarkChangesDoc(sourceDoc)
+	// 'eKGm' (e_KESCMMarkChanges) is now free (per-page mark removed; use kescmMarkChangesDoc)
 	// 'eKGx' (e_KESCMShowPageX) is now free (the diagonal page X was removed)
 	// 'eKGo' (e_KESCMShowOverset) is now free (kescmShowOverset removed; overset always rides the press-reveal)
-	e_KESCMShowOriginal   = 'eKGr',	// e=method K=Kohaku G=KESCM r=reveal : Page.kescmShowOriginal(sourcePage) - opaque OLD overlay (arg reuses p_KESCMSourcePage)
-	e_KESCMHideOriginal   = 'eKGh',	// e=method K=Kohaku G=KESCM h=hide   : Page/Document.kescmHideOriginal() - hide the opaque OLD overlay
-	e_KESCMShowOriginalUnderMouse = 'eKGu',	// e=method K=Kohaku G=KESCM u=under-mouse: Document.kescmShowOriginalUnderMouse(sourceDoc) - overlay the spread UNDER THE MOUSE (arg reuses p_KESCMSourceDoc)
+	// 'eKGr' (e_KESCMShowOriginal) is now free (manual opaque-OLD overlay removed; folded into the middle-button peek)
+	// 'eKGh' (e_KESCMHideOriginal) is now free (paired with kescmShowOriginal, removed)
+	// 'eKGu' (e_KESCMShowOriginalUnderMouse) is now free (manual under-mouse overlay removed; use the middle-button peek)
 	e_KESCMArmMousePeek    = 'eKGa',	// e=method K=Kohaku G=KESCM a=arm    : Document.kescmArmMousePeek(sourceDoc) - arm the middle-button peek (arg reuses p_KESCMSourceDoc)
 	e_KESCMDisarmMousePeek = 'eKGd',	// e=method K=Kohaku G=KESCM d=disarm : Document.kescmDisarmMousePeek() - disarm the middle-button peek and free the cache
 	e_KESCMToast           = 'eKGt',	// e=method K=Kohaku G=KESCM t=toast  : Page/Document.kescmToast(message) - brief auto-dismissing on-canvas message at screen center
@@ -51,8 +51,8 @@ enum KESCMScriptEvents
 // Property / Parameter IDs
 enum KESCMScriptProperties
 {
-	p_KESCMSourcePage   = 'pKGs',	// p=param K=Kohaku G=KESCM s=source page : compare-against (old) page, may be in another document
 	p_KESCMSourceDoc    = 'pKGD',	// p=param K=Kohaku G=KESCM D=source Doc  : compare-against (old) document
+	// 'pKGs' (p_KESCMSourcePage) is now free (per-page kescmMarkChanges/kescmShowOriginal removed)
 	// 'pKGx' (p_KESCMShowPageXFlag) is now free (kescmShowPageX removed)
 	// 'pKGo' (p_KESCMShowOversetFlag) is now free (kescmShowOverset removed)
 	p_KESCMToastMsg      = 'pKGt',	// p=param K=Kohaku G=KESCM t=toast text  : the message string shown briefly at screen center
