@@ -103,7 +103,10 @@
 //========================================================================================
 static const PMReal kKESCMRingTargetPx = 7.0;	// リングの目標太さ(画面px)。ズームに依らず一定に見せる
 static const uint8 kKESCMRingAlpha = 180;	// リングのアルファ(0..255)。約71%不透明=半透明で下の実ページが透ける(小さいほど透明)
-static const int   kKESCMDiffThr = 32;	// 変化判定: 2版の生RGB最大チャンネル差がこれ超で「変化」(AA/微差を除く)
+// 変化判定: 常に CMYK でラスタ化して比較し、CMYK 4ch のどれかがこのしきい値を超えて違えば「変化」とする。
+// しきい値=0 は「どんな差も拾う」(=CMYK 1単位でも検出)。CMYK の微差は RGB へ変換すると丸めで消えるため、
+// CMYK のまま比較するのが要点(ユーザーは CMYK 数値で考える)。画像/効果の再描画ゆらぎでノイズが出るなら 1〜2 に上げる。
+static const int   kKESCMCmykThr = 0;
 static const int32 kKESCMBaseRadius = 4;	// リング初期半径(画像px)。描画時にズームから再算出するための初期値
 static const PMReal kKESCMResolution = 72.0;	// 保存・表示のラスタ解像度(dpi)。リング画像/マスクはこの解像度で持つ(軽い)
 // 【取りこぼし防止】比較だけ高解像度で行い、結果を低解像度に圧縮(マックスプーリング)して記憶する。
@@ -278,6 +281,7 @@ public:
 
 	// target/source を 72dpi ARGB でラスタ化→差分マスク作成。変化px数>0 のときだけ
 	// sEntries[target.UID] にエントリ登録(既存は置換)。changed に「変化したか」を返す。
+	// target/source を CMYK ラスタ化して4ch比較(しきい値 kKESCMCmykThr)。変化px数>0 のときだけエントリ登録。
 	static ErrorCode MakeEntry(const UIDRef& targetRef, const UIDRef& sourceRef, bool16& changed);
 
 	// sourceRef(旧)を resolution(dpi)で1枚だけラスタ化し、不透明画像を sOrigImages[target.UID] に
@@ -505,13 +509,15 @@ ErrorCode KESCMDrawEventHandler::MakeEntry(const UIDRef& targetRef, const UIDRef
 	// 【高解像度】差分検出用。target / source を高dpi(kKESCMResolution×kKESCMHiResMul)でラスタ化。
 	// 低解像度では平均化で消える細線/微小ズレを満額の差分画素として拾い、取りこぼしを防ぐ。
 	const PMReal hiRes = kKESCMResolution * kKESCMHiResMul;
-	SnapshotUtilsEx* snapTH = new SnapshotUtilsEx(targetRef, 1.0, 1.0, hiRes, hiRes, 0.0, SnapshotUtilsEx::kCsRGB, kTrue);
+	// 比較は常に CMYK 4ch を不透明ラスタ化して行う(CMYK の微差が RGB 変換で消えるのを回避)。
+	// 表示リングは別途 ARGB で合成するので、比較ラスタは不透明(addTransparencyAlpha=kFalse)でよい。
+	SnapshotUtilsEx* snapTH = new SnapshotUtilsEx(targetRef, 1.0, 1.0, hiRes, hiRes, 0.0, SnapshotUtilsEx::kCsCMYK, kFalse);
 	sRasterizing = kTrue;	// この Draw 中に再入する HandleDrawEvent はマークを描かない(自己参照防止)
 	ErrorCode drewTH = snapTH->Draw(IShape::kPreviewMode);
 	sRasterizing = kFalse;
 	AGMImageAccessor* accTH = (drewTH == kSuccess) ? snapTH->CreateAGMImageAccessor() : nil;
 
-	SnapshotUtilsEx* snapSH = new SnapshotUtilsEx(sourceRef, 1.0, 1.0, hiRes, hiRes, 0.0, SnapshotUtilsEx::kCsRGB, kTrue);
+	SnapshotUtilsEx* snapSH = new SnapshotUtilsEx(sourceRef, 1.0, 1.0, hiRes, hiRes, 0.0, SnapshotUtilsEx::kCsCMYK, kFalse);
 	sRasterizing = kTrue;
 	ErrorCode drewSH = snapSH->Draw(IShape::kPreviewMode);
 	sRasterizing = kFalse;
@@ -536,12 +542,12 @@ ErrorCode KESCMDrawEventHandler::MakeEntry(const UIDRef& targetRef, const UIDRef
 		int32 hl = ::ToInt32(::Round(PMReal(hth) / kKESCMHiResMul));
 		if (wl < 1) wl = 1;
 		if (hl < 1) hl = 1;
-		const int32 bppL = bppH;			// 両スナップ addTransparencyAlpha=kTrue ゆえ ARGB(=4)想定
+		const int32 bppL = 4;				// 表示リングは常に自前 ARGB(=4)合成。比較ラスタの ch 数(RGB=4/CMYK=4)とは独立
 		const int32 rbL = wl * bppL;		// 自前バッファ=行パディング無し
 
 		if (ptH != nil && psH != nil &&
 			wth == wsh && hth == hsh && rbTH == rbSH && rbTH > 0 &&
-			bppH >= 3 && wl > 0 && hl > 0)
+			bppH >= 4 && wl > 0 && hl > 0)
 		{
 			const size_t N = (size_t)wl * hl;
 			uint8*  M     = new uint8[N];	// 低解像度マスク(保存): プーリング結果
@@ -551,9 +557,12 @@ ErrorCode KESCMDrawEventHandler::MakeEntry(const UIDRef& targetRef, const UIDRef
 				memset(cntHi, 0, N * sizeof(uint16));
 
 				// 【高解像度で比較 → 低解像度セルへ散らす(scatter)】
-				// 高解像度の各画素を差分判定(生RGB最大チャンネル差>しきい値)し、変化していたら
+				// 高解像度の各画素を差分判定(生の各チャンネル最大差>しきい値)し、変化していたら
 				// 対応する低解像度セルのカウンタを増やす。セル写像は寸法比(高/低が整数倍でなくてもよい)。
-				const int32 colorOffH = bppH - 3;
+				// RGB: 先頭アルファを飛ばして3ch(offset=bppH-3)。CMYK: 先頭から4ch(offset=0, しきい値=kKESCMCmykThr)。
+				const int  nch       = 4;
+				const int32 colorOffH = 0;
+				const int  thr        = kKESCMCmykThr;
 				for (int32 y = 0; y < hth; ++y)
 				{
 					const uint8* rowT = ptH + (size_t)y * rbTH;
@@ -565,11 +574,13 @@ ErrorCode KESCMDrawEventHandler::MakeEntry(const UIDRef& targetRef, const UIDRef
 					{
 						const uint8* px = rowT + (size_t)x * bppH + colorOffH;
 						const uint8* sx = rowS + (size_t)x * bppH + colorOffH;
-						const int dR = (px[0] > sx[0]) ? px[0] - sx[0] : sx[0] - px[0];
-						const int dG = (px[1] > sx[1]) ? px[1] - sx[1] : sx[1] - px[1];
-						const int dB = (px[2] > sx[2]) ? px[2] - sx[2] : sx[2] - px[2];
-						int cm = dR; if (dG > cm) cm = dG; if (dB > cm) cm = dB;
-						if (cm > kKESCMDiffThr)
+						int cm = 0;
+						for (int c = 0; c < nch; ++c)
+						{
+							const int d = (px[c] > sx[c]) ? px[c] - sx[c] : sx[c] - px[c];
+							if (d > cm) cm = d;
+						}
+						if (cm > thr)
 						{
 							int32 xl = (int32)((int64)x * wl / wth);
 							if (xl >= wl) xl = wl - 1;
@@ -599,7 +610,8 @@ ErrorCode KESCMDrawEventHandler::MakeEntry(const UIDRef& targetRef, const UIDRef
 				{
 					// 背景(対象ページ)の「赤っぽい」画素マップを、高解像度 target をプーリングして作る
 					// (案1: 低解像度 snapL を廃止。低解像度セル中心の高解像度画素1点を代表サンプルに)。
-					const int32 colorOffT = bppH - 3;
+					// CMYK 経路は RGB が無いので、サンプル CMYK を近似 RGB に変換してから同じ R 優位判定を使う。
+					const int32 colorOffT = 0;
 					uint8* BG = new uint8[N];
 					if (BG != nil)
 					{
@@ -613,7 +625,11 @@ ErrorCode KESCMDrawEventHandler::MakeEntry(const UIDRef& targetRef, const UIDRef
 								int32 xh = (int32)(((int64)x * wth + wth / 2) / wl);
 								if (xh >= wth) xh = wth - 1;
 								const uint8* px = rowT + (size_t)xh * bppH + colorOffT;
-								const int r = px[0], g = px[1], b = px[2];
+								// CMYK(0..255) → 近似 RGB: ch=(255-ink)*(255-K)/255 の簡易式
+								const int C = px[0], Mk = px[1], Yk = px[2], K = px[3];
+								const int r = (255 - C)  * (255 - K) / 255;
+								const int g = (255 - Mk) * (255 - K) / 255;
+								const int b = (255 - Yk) * (255 - K) / 255;
 								BG[(size_t)y * wl + x] = (r - g > kKESCMRedBgDom && r - b > kKESCMRedBgDom) ? 1 : 0;
 							}
 						}
