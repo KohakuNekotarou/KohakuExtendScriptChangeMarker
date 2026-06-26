@@ -162,8 +162,8 @@ static const int32 kKESCMCountMergeRadius = 8;
 static const PMReal kKESCMOrigResolution = 72.0;
 
 // 一時トーストメッセージ(画面=可視領域の中央に少し出て自動で消える「ChangeMarker ON」等)。ズーム不変サイズ。
-static const PMReal kKESCMToastTextPx    = 36.0;	// 文字サイズ(画面px)
-static const PMReal kKESCMToastPadPx     = 16.0;	// 文字周りの内側余白(画面px)。大きいほど背景ボックスが広い
+static const PMReal kKESCMToastTextPx    = 28.8;	// 文字サイズ(画面px)。従来36.0の80%
+static const PMReal kKESCMToastPadPx     = 12.8;	// 文字周りの内側余白(画面px)。大きいほど背景ボックスが広い。従来16.0の80%
 static const uint32 kKESCMToastDefaultMs = 2500;	// 既定の表示時間(ms)。表示後この時間で自動的に消える
 
 // クリック点 CMYK サンプリング(Shift＋Ctrl＋Alt＋ミドル)。クリック周りの極小領域だけを高dpi・CMYK で
@@ -342,6 +342,10 @@ void KESCMDrawEventHandler::BuildRing(uint8* buf, int32 rb, int32 bpp, int32 wt,
 	if (radius < 1) radius = 1;
 	const int32 colorOff = bpp - 3;
 	const uint8 rad = (radius > 255) ? 255 : (uint8)radius;	// dist は uint8 clamp255。半径上限は200<255。
+	// ★端クリップ対策: バッファ(=ページ矩形)端から radius 以内に変化があると、外側の帯がページ端を
+	//   越える分はバッファ外=描かれず、その辺の枠が痩せて欠ける。対策は「端から radius 以内の変化画素を
+	//   内側帯として塗る」だけでよい。ある変化画素が x<radius にあれば、領域は左端から radius 以内に
+	//   到達済み=左の外側帯は必ずクリップされるので、接触判定(旧 drow[0] 等)は不要。4辺とも対称に扱う。
 
 	// ★案A: 距離変換の1パス塗り。リング = 0<dist<=radius(=「半径内に変化画素があり、かつ自身は変化画素でない」)。
 	// 旧版の横膨張+縦膨張(各 O(W*H) のスライディングウィンドウ)が消え、ズーム段ごとの仕事が約1/3。
@@ -356,7 +360,15 @@ void KESCMDrawEventHandler::BuildRing(uint8* buf, int32 rb, int32 bpp, int32 wt,
 			uint8* pixT = rowB + (size_t)x * bpp;	// ARGB 先頭=alpha
 			uint8* px = pixT + colorOff;
 			const uint8 d = drow[x];
-			if (d != 0 && d <= rad)
+			bool16 ring = (d != 0 && d <= rad);		// 外側の帯(従来)
+			if (!ring && d == 0)
+			{
+				// 変化画素が端から radius 以内にあれば、その端の外側帯はクリップ済み=内側に補填する。
+				if (x < radius            || (wt - 1 - x) < radius ||
+				    y < radius            || (ht - 1 - y) < radius)
+					ring = kTrue;
+			}
+			if (ring)
 			{
 				// リング画素。下の実ページが赤っぽければ青、そうでなければ赤(画素単位)。
 				const bool useAlt = (brow != nil && brow[x]);
@@ -1841,14 +1853,14 @@ IEventDispatcher::EventTypeList KESCMPeekWatcher::WatchEvent(IEvent* e)
 			// 判定はこの押下時の修飾キー状態のみ。以後キーを離しても変わらず、ミドルを離すと消える。
 			KESCMBeginPeekHold(PMReal(1.0));
 		}
-		else if (sPeekArmed && e->CmdKeyDown())
-		{
-			// Ctrl(=Win, CmdKeyDown)＋ミドル押下: 同じ peek を 50% 透明で重ねる(現行ページと半々のゴースト比較)。
-			KESCMBeginPeekHold(kKESCMPeekSemiOpacity);
-		}
 		else if (sPeekArmed && e->OptionAltKeyDown())
 		{
-			// Alt(=Win, OptionAltKeyDown)＋ミドル押下(momentary): マウス下スプレッドだけ枠を再検出して更新。
+			// Alt(=Win, OptionAltKeyDown)＋ミドル押下: 同じ peek を 50% 透明で重ねる(現行ページと半々のゴースト比較)。
+			KESCMBeginPeekHold(kKESCMPeekSemiOpacity);
+		}
+		else if (sPeekArmed && e->CmdKeyDown())
+		{
+			// Ctrl(=Win, CmdKeyDown)＋ミドル押下(momentary): マウス下スプレッドだけ枠を再検出して更新。
 			// 旧版画像キャッシュは破棄(次 peek で作り直し)。完了したら「spread N updated」をトースト表示。
 			int32 sp = -1;
 			if (KESCMRefreshSpreadUnderMouse(sPeekTargetDB, sPeekSourceDB, &sp, nil))
@@ -1874,7 +1886,7 @@ IEventDispatcher::EventTypeList KESCMPeekWatcher::WatchEvent(IEvent* e)
 				KESCMInvalidateMarksDoc();
 			}
 		}
-		// (Shift/Ctrl を押していて arm 未済 → 何もしない。Shift/Ctrl は peek 専用に予約)
+		// (Shift/Ctrl/Alt を押していて arm 未済 → 何もしない。これらは peek 系専用に予約)
 	}
 	else // kMButtonUp
 	{
@@ -1890,7 +1902,7 @@ IEventDispatcher::EventTypeList KESCMPeekWatcher::WatchEvent(IEvent* e)
 
 		if (sPeekActive)
 		{
-			// Shift＋ミドルを離した(ミドル解放) → 旧版を隠す(マークは触らない)。キャッシュは保持(再 peek は即時)。
+			// Shift／Alt＋ミドルを離した(ミドル解放) → 旧版を隠す(マークは触らない)。キャッシュは保持(再 peek は即時)。
 			sPeekActive = kFalse;
 			if (KESCMDrawEventHandler::sShowOriginal)
 			{
@@ -2248,12 +2260,12 @@ static bool16 KESCMSampleCmykUnderMouse(IDataBase* targetDB, IDataBase* sourceDB
 			// ラベルは ASCII。1行目=Target(新/cN)、改行(LF)、2行目=Source(旧/cO)。各値はラスタ8bit(0..255)を
 			// 本来の CMYK 数値 0..100% に換算し、3桁ゼロ埋めで桁を縦に揃える。
 			outMsg.SetTranslatable(kFalse);
-			outMsg.Append("Target C"); KESCMAppend3(outMsg, KESCMByteToPct(cN[0]));
+			outMsg.Append("Target\tC"); KESCMAppend3(outMsg, KESCMByteToPct(cN[0]));	// TAB=ラベル列/値列の区切り(値の桁を固定列で縦揃え)
 			outMsg.Append(" M");       KESCMAppend3(outMsg, KESCMByteToPct(cN[1]));
 			outMsg.Append(" Y");       KESCMAppend3(outMsg, KESCMByteToPct(cN[2]));
 			outMsg.Append(" K");       KESCMAppend3(outMsg, KESCMByteToPct(cN[3]));
 			outMsg.AppendW(UTF32TextChar(0x0A));	// 改行 → 2行目へ
-			outMsg.Append("Source C"); KESCMAppend3(outMsg, KESCMByteToPct(cO[0]));
+			outMsg.Append("Source\tC"); KESCMAppend3(outMsg, KESCMByteToPct(cO[0]));	// TAB=ラベル列/値列の区切り(値の桁を固定列で縦揃え)
 			outMsg.Append(" M");       KESCMAppend3(outMsg, KESCMByteToPct(cO[1]));
 			outMsg.Append(" Y");       KESCMAppend3(outMsg, KESCMByteToPct(cO[2]));
 			outMsg.Append(" K");       KESCMAppend3(outMsg, KESCMByteToPct(cO[3]));
