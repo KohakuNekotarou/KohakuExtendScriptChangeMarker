@@ -69,7 +69,9 @@
 #include "LayoutUIID.h"					// kGrabberHandToolBoss / kPointerToolBoss
 #include "DocumentContextID.h"			// kEndSpreadMessage
 #include "GraphicsID.h"					// kDrawEventService
-#include "GraphicsData.h"				// GraphicsData::GetGraphicsPort / GetView
+#include "GraphicsData.h"				// GraphicsData::GetGraphicsPort / GetView / GetViewPortAttributes
+#include "IViewPortAttributes.h"		// GetAttr(kSepPrvOPPEnabledVPAttr) でオーバープリントプレビュー検出
+#include "OutPrvID.h"					// kSepPrvOPPEnabledVPAttr(オーバープリントプレビュー有効フラグ)
 #include "IGraphicsPort.h"				// image() / translate / scale
 #include "AutoGSave.h"					// 描画状態の save/restore
 #include "IControlView.h"				// GetContentToWindowMatrix(現ズーム)
@@ -103,7 +105,8 @@
 // チューニング定数
 //========================================================================================
 static const PMReal kKESCMRingTargetPx = 8.0;	// リングの目標太さ(画面px)。ズームに依らず一定に見せる
-static const uint8 kKESCMRingAlpha = 180;	// リングのアルファ(0..255)。小さいほど透明
+static const uint8 kKESCMRingAlpha = 255;	// リングの基本アルファ(0..255)。「通常」=不透明(255)。薄表示は setopacity 側で行う(30%→255×0.3=実30%)
+static const PMReal kKESCMFaintOpacity = 0.25;	// 薄表示(ミドルのみ/印刷30%系)の不透明度。小さいほど薄い。★現在25%
 // 変化判定: 常に CMYK でラスタ化して比較し、CMYK 4ch のどれかがこのしきい値を超えて違えば「変化」とする。
 // しきい値=0 は「どんな差も拾う」(=CMYK 1単位でも検出)。CMYK の微差は RGB へ変換すると丸めで消えるため、
 // CMYK のまま比較するのが要点(ユーザーは CMYK 数値で考える)。画像/効果の再描画ゆらぎでノイズが出るなら 1〜2 に上げる。
@@ -117,14 +120,15 @@ static const int32  kKESCMPoolMinCount = 1;	// プーリング: 低解像度1セ
 											// 1=最高感度(縁ノイズも拾う)/大きいほどノイズ耐性↑(取りこぼしのリスクも僅かに増)
 
 // リング色: 通常は赤。ただし枠の下の実ページが「赤っぽい」画素の上では、半透明の赤枠が背景に埋もれて
-// 見えなくなるため、視認性確保のために青へ切り替える(画素単位)。
+// 見えなくなるため、視認性確保のためにシアンへ切り替える(画素単位)。シアン=赤の補色(色相180°反対)で、
+// 明るさも高い(輝度≒0.79)ため赤上で明暗・色相とも最大コントラスト。純青は暗く細線で沈むため不採用。
 static const uint8 kKESCMRingR = 255, kKESCMRingG = 0,   kKESCMRingB = 0;		// 通常(赤)
-static const uint8 kKESCMRingAltR = 0,   kKESCMRingAltG = 0,   kKESCMRingAltB = 255;	// 赤背景の上(純粋な青)
+static const uint8 kKESCMRingAltR = 0,   kKESCMRingAltG = 255, kKESCMRingAltB = 255;	// 赤背景の上(シアン=赤の補色)
 static const int   kKESCMRedBgDom = 25;	// 背景を「赤っぽい」と判定する R 優位の閾値(R が G,B の双方より これ以上大きい)。小さいほどピンク/薄い赤も拾う
 
-// 変更数テキストの色。数字=赤、後ろの語=青。setrgbcolor(0..1)。リング(赤/青)とは別系統。
+// 変更数テキストの色。数字=赤、後ろの語=シアン。setrgbcolor(0..1)。リング(赤/シアン)とは別系統。
 static const PMReal kKESCMCountNumR  = 1.0, kKESCMCountNumG  = 0.0, kKESCMCountNumB  = 0.0;	// 数字 赤
-static const PMReal kKESCMMarkR = 0.0, kKESCMMarkG = 0.0, kKESCMMarkB = 1.0;					// 語 青
+static const PMReal kKESCMMarkR = 0.0, kKESCMMarkG = 1.0, kKESCMMarkB = 1.0;					// 語 シアン
 
 // 変更数テキスト(各ページの変更=枠の数を「N chg」で表示)。常時表示(トグル無し。X廃止)。ズームで大きさ不変。
 // 位置=各ページ上端から少し下、ページ「内側」に横中央で置く。数字は赤fill＋細い赤ストロークでやや太字、白い縁(ハロー)付き。
@@ -133,7 +137,10 @@ static const PMReal kKESCMMarkR = 0.0, kKESCMMarkG = 0.0, kKESCMMarkB = 1.0;				
 static const PMReal kKESCMCountTextPx   = 20.0;	// 数字の文字サイズ(画面px)
 static const PMReal kKESCMCountInsetPx  = 6.0;	// ページ上端からの内側余白(画面px)
 static const PMReal kKESCMCountHaloFrac = 0.16;	// 白縁の太さ(文字サイズに対する比)。見える縁はこの約半分。大きいほど太い縁
+static const PMReal kKESCMCountPrintHaloFrac = 0.08;	// 印刷時のみの白縁太さ(文字サイズ比)。画面の半分=白縁を少なく
 static const PMReal kKESCMCountBodyFrac = 0.05;	// 赤本体を太らせるストローク幅(文字サイズ比)。大きいほど太い赤文字。0でfillのみ(最も細い)
+static const PMReal kKESCMCountPrintThinFrac = 0.03;	// 印刷時のみ: 赤fillの外縁を白で削って細く見せるストローク幅(文字サイズ比)。大きいほど細い。0.1は削りすぎでステムが消えるため0.03(削る総幅=numPt×値)
+static const PMReal kKESCMCountWordThinFrac  = 0.04;	// 印刷時のみ: 語("chg")の外縁を白で削って細く見せるストローク幅(語サイズ比)。半分くらい細く。大きいほど細い(削りすぎると消える)
 // 数字の後ろに続く語(" chg")。小さめ・細め(fill のみ=ストローク無し)で添える。
 static const PMReal kKESCMCountWordPx   = 11.0;	// 語の文字サイズ(画面px)。数字より小さめ
 static const PMReal kKESCMCountDropPx   = 5.0;	// 数字ベースラインをページ上端基準からさらに下げる量(画面px)
@@ -257,9 +264,17 @@ public:
 	// 表示し、離すと kFalse に戻す。kFalse の間はこれら全部を描かない。旧版べた載せ(sShowOriginal)は
 	// このトグルの影響を受けない(ダブルクリックで別管理)。
 	static bool16 sMarksVisible;
+	// 画面マーク(リング＋変更数)に掛ける「実効」不透明度。★既定=1.0(不透明)。リング blit と数字 show の双方に同率。
+	//   ・ミドルのみ押下中 = kKESCMFaintOpacity(≒0.3)   ・Shift+Alt 押下中 = 1.0(不透明)
+	//   ・押していない常時表示時 = 基準値 KESCMBaseScreenOpacity()(印刷ON＋30%なら0.3 / それ以外1.0)
+	static PMReal sMarkScreenOpacity;
 	// 変更マーク(リング＋変更数)を印刷/PDF にも出すか(kescmSetPrintMarks)。★既定=kFalse(画面のみ)。
 	// ON の間は、ミドル押下に関係なく画面でも常時表示(WYSIWYG)＋印刷/PDF にも描く。マークデータとは独立に保持。
 	static bool16 sPrintMarks;
+	// 印刷/PDF 時のマーク不透明度を薄く(約30%)するか(kescmSetPrintMarks の第2引数 faint)。★既定=kFalse(通常=不透明)。
+	// 印刷経路(リング=KESCMDrawRingForPrint / 変更数テキスト)に効くほか、印刷ON＋30%中は画面の常時表示の
+	// 基準不透明度(KESCMBaseScreenOpacity)も0.3に下げる(画面と印刷の見た目を一致)。
+	static bool16 sPrintFaint;
 	// 自前のラスタ化(MakeEntry/MakeOrigImage の SnapshotUtilsEx::Draw)中だけ kTrue。HandleDrawEvent が
 	// 再入したらマークを描かない(自己参照防止)。kPreviewMode ビットに頼ると PDF 書き出し(同ビット)を巻き込むため。
 	static bool16 sRasterizing;
@@ -322,7 +337,9 @@ CREATE_PMINTERFACE(KESCMDrawEventHandler, kKESCMDrawEventHandlerImpl)
 std::map<UID, KESCMOverlayEntry*> KESCMDrawEventHandler::sEntries;
 IDataBase* KESCMDrawEventHandler::sDB = nil;
 bool16 KESCMDrawEventHandler::sMarksVisible = kFalse;	// 既定=非表示。枠等はシングルミドル押下中だけ表示(master トグル)
+PMReal KESCMDrawEventHandler::sMarkScreenOpacity = 1.0;	// 既定=不透明。ミドルのみ=30%/Shift+Alt=不透明/印刷30%中の常時表示=30%
 bool16 KESCMDrawEventHandler::sPrintMarks = kFalse;	// 既定=画面のみ(印刷/PDF には出さない)
+bool16 KESCMDrawEventHandler::sPrintFaint = kFalse;	// 既定=印刷時は通常不透明度(約70%)
 bool16 KESCMDrawEventHandler::sRasterizing = kFalse;	// 自前ラスタ化中だけ kTrue(自己参照防止)
 std::map<UID, KESCMOrigImage*> KESCMDrawEventHandler::sOrigImages;
 IDataBase* KESCMDrawEventHandler::sOrigDB = nil;
@@ -375,7 +392,7 @@ void KESCMDrawEventHandler::BuildRing(uint8* buf, int32 rb, int32 bpp, int32 wt,
 				px[0] = useAlt ? kKESCMRingAltR : kKESCMRingR;
 				px[1] = useAlt ? kKESCMRingAltG : kKESCMRingG;
 				px[2] = useAlt ? kKESCMRingAltB : kKESCMRingB;
-				if (bpp >= 4) pixT[0] = kKESCMRingAlpha;	// 半透明
+				if (bpp >= 4) pixT[0] = kKESCMRingAlpha;	// リング画素の基本アルファ(=255 不透明)。薄表示は setopacity 側
 			}
 			else { px[0] = 255; px[1] = 255; px[2] = 255; if (bpp >= 4) pixT[0] = 0; }	// 透明
 		}
@@ -1072,7 +1089,8 @@ static void KESCMDrawRingForPrint(IGraphicsPort* gPort, KESCMOverlayEntry* e)
 		}
 	}
 
-	const PMReal op = kKESCMRingAlpha / PMReal(255.0);	// リングの半透明度(画面と同じ)
+	// リングの不透明度。通常=画面と同じ(kKESCMRingAlpha/255=1.0 不透明) / faint=約30%(kKESCMFaintOpacity)。
+	const PMReal op = KESCMDrawEventHandler::sPrintFaint ? kKESCMFaintOpacity : (kKESCMRingAlpha / PMReal(255.0));
 	struct PassDef { uint8* buf; uint8 r, g, b; };
 	PassDef passes[2] = { { maskR, 255, 0, 0 }, { maskB, 0, 0, 255 } };	// 赤 / 青
 
@@ -1124,7 +1142,16 @@ bool16 KESCMDrawEventHandler::HandleDrawEvent(ClassID eventID, void* eventData)
 	// ※PDF 書き出し(File>Export)はこのスプレッド描画イベントを発火しないため対象外(print-to-PDF を使う)。
 	// 自己参照(自前スナップショット)は上の sRasterizing で防ぐので、ここで kPreviewMode は見ない。
 	const bool16 printing = (ded->flags & IShape::kPrinting) != 0;
-	if (printing && !sPrintMarks)			// 印刷で印刷マークが OFF のときだけ描かない
+	// オーバープリントプレビュー(OPP)中か。OPP は「印刷の見え方」を画面でシミュレートするモードなので、
+	// 枠は基本非印刷=OPP でも「枠の印刷」OFF なら隠す(以前 kPreviewMode で弾いていた挙動の復帰)。ただし
+	// kPreviewMode(4096) は PDF 書き出しの kPDFExportMode と同一ビットで衝突するため使わず、OPP 専用の
+	// ビューポート属性 kSepPrvOPPEnabledVPAttr で正確に判定する(PDF export とは衝突しない)。
+	bool16 overprintPreview = kFalse;
+	IViewPortAttributes* vpa = ded->gd->GetViewPortAttributes();	// ded->gd は冒頭で非nil確認済み
+	if (vpa != nil)
+		overprintPreview = (vpa->GetAttr(kSepPrvOPPEnabledVPAttr, 0) != 0);
+	// 印刷 or オーバープリントプレビューで「枠の印刷」が OFF のときは描かない(枠は基本非印刷)。
+	if ((printing || overprintPreview) && !sPrintMarks)
 		return kFalse;
 	// マークも 旧版べた載せ も トースト も無ければ何もしない。
 	if (sEntries.empty() && !(sShowOriginal && !sOrigImages.empty()) && !sToastVisible)
@@ -1245,6 +1272,17 @@ bool16 KESCMDrawEventHandler::HandleDrawEvent(ClassID eventID, void* eventData)
 	if (peekingThisSpread || !(sPrintMarks || sMarksVisible) || sEntries.empty() || sDB == nil || db != sDB)
 		return kFalse;
 
+	// 画面マークの実効不透明度。sMarkScreenOpacity は常に実効値を保持する(下の各ソースが設定):
+	//   ・既定/印刷通常 = 1.0(不透明)  ・印刷30%選択中(常時表示) = 0.3
+	//   ・ミドルのみ押下中 = 0.3        ・Shift+Alt 押下中 = 1.0(不透明=印刷30%中でも不透明で確認できる)
+	// 離すと印刷設定に応じた基準値(KESCMBaseScreenOpacity)へ戻る。printing 経路はここを使わない。
+	const PMReal screenMarkOp = sMarkScreenOpacity;
+
+	// 変更数テキスト用の既定フォントは、このスプレッドの全ページで共通。ページループ内で毎回
+	// 取得すると変更ページ数ぶん無駄に問い合わせるので、ループ外で1回だけ取得して使い回す。
+	InterfacePtr<IFontMgr> countFontMgr(GetExecutionContextSession(), UseDefaultIID());
+	InterfacePtr<IPMFont> countFont(countFontMgr ? countFontMgr->QueryFont(countFontMgr->GetDefaultFontName()) : nil);
+
 	// このスプレッドの各ページについて、エントリがあれば描く。
 	const int32 np = spread->GetNumPages();
 	for (int32 i = 0; i < np; ++i)
@@ -1301,7 +1339,12 @@ bool16 KESCMDrawEventHandler::HandleDrawEvent(ClassID eventID, void* eventData)
 			if (printing)
 				KESCMDrawRingForPrint(gPort, e);
 			else
+			{
+				// 画面 blit は image() の画素 alpha に加えてポート opacity も honor する。薄表示(Shift+Alt+ミドル)
+				// 中や 30%設定中は screenMarkOp(≒0.3)、通常は 1.0。AutoGSave 内なので閉じれば元へ戻る。
+				gPort->setopacity(screenMarkOp, kFalse);
 				gPort->image(&e->rec, PMMatrix(), 0);			// 自前レコード(buf を指す)を blit
+			}
 		}
 
 		// この頁の変更数「N chg」を常時表示(常時・トグル無し)。リング画像の上に重ねる。
@@ -1311,8 +1354,7 @@ bool16 KESCMDrawEventHandler::HandleDrawEvent(ClassID eventID, void* eventData)
 			AutoGSave agx(gPort);
 			if (e->changeCount > 0)
 			{
-				InterfacePtr<IFontMgr> fontMgr(GetExecutionContextSession(), UseDefaultIID());
-				InterfacePtr<IPMFont> theFont(fontMgr ? fontMgr->QueryFont(fontMgr->GetDefaultFontName()) : nil);
+				IPMFont* theFont = countFont;	// ループ外で取得済みの既定フォントを使い回す
 				if (theFont != nil)
 				{
 					// 画面pxサイズに拡大率連動の倍率 countMul を掛けてから px→pt(/sxr)へ。
@@ -1338,13 +1380,22 @@ bool16 KESCMDrawEventHandler::HandleDrawEvent(ClassID eventID, void* eventData)
 					const PMReal drop = (sxr > 0) ? (kKESCMCountDropPx / sxr) : (pr.Width() / PMReal(240));
 					const PMReal ty = pr.Top() + numPt * PMReal(0.78) + drop;
 
-					gPort->setopacity(PMReal(1.0), kFalse);							// 読みやすく不透明
+					// 変更数テキストの不透明度: 印刷時は通常=1.0 / faint=約30%(リングと同率)。画面時は screenMarkOp
+					// (通常=1.0 / Shift+Alt薄表示中・30%設定中=約0.3)。リングと同じ実効値で揃える。
+					const PMReal textOp = printing ? (sPrintFaint ? kKESCMFaintOpacity : PMReal(1.0)) : screenMarkOp;
+					// 薄表示中(<1.0)は数字の重ね描き(赤fill＋赤太らせ)が半透明で足し合わさり濃い赤が残るため、太字化を省く。
+					const bool16 faintText = (textOp < PMReal(0.999));
+
+					// テキストの不透明度。画面=screenMarkOp / 印刷=通常1.0・faint0.25。なお印刷フラットナは
+					// text show() の setopacity を無視するため、印刷の薄表示は別途「白縁を半分＋外縁を白で削って
+					// 細く見せる」で表現している(透明化は断念済み)。ここでは画面の薄表示にだけ効く。
+					gPort->setopacity(textOp, kFalse);
 					gPort->selectfont(theFont, numPt);
 					const UTF16TextChar* numBuf = numStr.GrabUTF16Buffer(nil);
 
-					// 数字の白い縁: 先に白を太めのストロークで描いてハローを作る。
+					// 数字の白い縁: 先に白を太めのストロークで描いてハローを作る。印刷時は白縁を半分に細く。
 					gPort->setrgbcolor(PMReal(1.0), PMReal(1.0), PMReal(1.0));		// 白
-					gPort->setlinewidth(numPt * kKESCMCountHaloFrac);
+					gPort->setlinewidth(numPt * (printing ? kKESCMCountPrintHaloFrac : kKESCMCountHaloFrac));
 					gPort->show(startX, ty, numCh, numBuf,
 						(IGraphicsPort::TextGraphicsFlags)(IGraphicsPort::kStrokeText));
 
@@ -1355,15 +1406,37 @@ bool16 KESCMDrawEventHandler::HandleDrawEvent(ClassID eventID, void* eventData)
 						(IGraphicsPort::TextGraphicsFlags)(IGraphicsPort::kFillText));
 					// 同色の細い赤ストロークで少し太らせる。輪郭中心ゆえ半分が外へ膨らみ、外側の白ハローを
 					// 僅かに侵食して赤を太く見せる(白ハローは更に外側に残る=「赤文字に白縁」)。
-					gPort->setlinewidth(numPt * kKESCMCountBodyFrac);
-					gPort->show(startX, ty, numCh, numBuf,
-						(IGraphicsPort::TextGraphicsFlags)(IGraphicsPort::kStrokeText));
+					// 印刷時は太らせない(細く出したいので fill のみに留める)。
+					if (!faintText && !printing)
+					{
+						gPort->setlinewidth(numPt * kKESCMCountBodyFrac);
+						gPort->show(startX, ty, numCh, numBuf,
+							(IGraphicsPort::TextGraphicsFlags)(IGraphicsPort::kStrokeText));
+					}
+					// 印刷時のみ: 紙白(白)を細いストロークで上描きして赤fillの外縁を削り、数字を細く見せる
+					// (ストロークは輪郭中心ゆえ内側半分が赤を侵食=erode。白ハローは更に外側に残る)。白紙前提。
+					if (printing)
+					{
+						gPort->setrgbcolor(PMReal(1.0), PMReal(1.0), PMReal(1.0));	// 紙白
+						gPort->setlinewidth(numPt * kKESCMCountPrintThinFrac);
+						gPort->show(startX, ty, numCh, numBuf,
+							(IGraphicsPort::TextGraphicsFlags)(IGraphicsPort::kStrokeText));
+					}
 
 					// 語: 小さめ・細め(fill のみ=ストローク無し)・青。数字の直後・同じベースライン。
 					gPort->setrgbcolor(kKESCMMarkR, kKESCMMarkG, kKESCMMarkB);
 					gPort->selectfont(theFont, wordPt);
-					gPort->show(startX + numW, ty, wordCh, wordStr.GrabUTF16Buffer(nil),
+					const UTF16TextChar* wordBuf = wordStr.GrabUTF16Buffer(nil);
+					gPort->show(startX + numW, ty, wordCh, wordBuf,
 						(IGraphicsPort::TextGraphicsFlags)(IGraphicsPort::kFillText));
+					// 印刷時のみ: 数字と同様に紙白を細いストロークで上描きして語の外縁を削り、半分くらい細く見せる。
+					if (printing)
+					{
+						gPort->setrgbcolor(PMReal(1.0), PMReal(1.0), PMReal(1.0));	// 紙白
+						gPort->setlinewidth(wordPt * kKESCMCountWordThinFrac);
+						gPort->show(startX + numW, ty, wordCh, wordBuf,
+							(IGraphicsPort::TextGraphicsFlags)(IGraphicsPort::kStrokeText));
+					}
 				}
 			}
 		}
@@ -1434,11 +1507,21 @@ static bool16     sPeekArmed    = kFalse;
 // 押下中だけ表示し、ミドルを離すと消す(修飾キーは離してもよい)。判定はミドル押下時に1回見るだけ。
 static const PMReal kKESCMPeekSemiOpacity = 0.5;	// Ctrl＋ミドル時の旧版の不透明度(0..1)
 static bool16 sPeekActive        = kFalse;	// Shift/Ctrl+ミドルを押し込み中(=覗き表示中)か
-static bool16 sSingleShowing     = kFalse;	// シングルのミドル押下中(=全マークを一時的に表示中)か。離すと隠す
+static bool16 sSingleShowing     = kFalse;	// 修飾なしミドル押下中(=全マークを約30%で一時表示中)か。離すと隠す＋基準opacityへ
+static bool16 sFaintShowing      = kFalse;	// Shift+Alt+ミドル押下中(=全マークを通常=不透明で一時表示中)か。離すと隠す＋基準opacityへ
 static bool16 sColorHoldShowing  = kFalse;	// Shift＋Ctrl＋Alt＋ミドル押下中(=色サンプルのトースト表示中)か。離すと消す
 // ミドル押下中だけハンドツール(掴んで移動)に一時切替。離すと元のツールへ戻す。
 static ITool*  sSavedTool  = nil;	// 切替前のツール(ref を保持。Restore で Release)
 static bool16  sHandActive = kFalse;	// ハンドツールに一時切替中か
+
+// 画面マークの「基準」不透明度(=ミドル/Shift+Alt のどちらも押していない常時表示時の値)。
+//   印刷マークON＋30%(faint)選択中は 0.3(画面も印刷と同じ薄さ)、それ以外は 1.0(不透明)。
+//   ミドル/Shift+Alt を離したら sMarkScreenOpacity をこの値へ戻す。
+static PMReal KESCMBaseScreenOpacity()
+{
+	return (KESCMDrawEventHandler::sPrintMarks && KESCMDrawEventHandler::sPrintFaint)
+	       ? kKESCMFaintOpacity : PMReal(1.0);
+}
 
 // peek 試行の結果(スクリプトの状態文字列用。watcher は無視する)。
 enum KESCMPeekResult { kKESCMPeekNoView = 0, kKESCMPeekNoSpread = 1, kKESCMPeekShown = 2, kKESCMPeekNoChange = 3 };
@@ -1824,10 +1907,12 @@ IEventDispatcher::EventTypeList KESCMPeekWatcher::WatchEvent(IEvent* e)
 			sPeekSourceDB = nil;
 			sPeekActive = kFalse;
 			sSingleShowing = kFalse;
+			sFaintShowing = kFalse;
 			sColorHoldShowing = kFalse;
 			KESCMDrawEventHandler::sToastVisible = kFalse;	// 色サンプルのトーストが出ていれば消す(db が消えたため)
 			KESCMDrawEventHandler::sToastDB = nil;
 			KESCMDrawEventHandler::sMarksVisible = kFalse;	// 既定(非表示)へ
+			KESCMDrawEventHandler::sMarkScreenOpacity = 1.0;	// 不透明度も既定へ戻す
 			KESCMDrawEventHandler::DropAllOrig();
 			return interest;
 		}
@@ -1845,6 +1930,21 @@ IEventDispatcher::EventTypeList KESCMPeekWatcher::WatchEvent(IEvent* e)
 			{
 				sColorHoldShowing = kTrue;
 				KESCMShowHoldToast(sPeekTargetDB, colorMsg);
+			}
+		}
+		else if (e->ShiftKeyDown() && e->OptionAltKeyDown() && !e->CmdKeyDown())
+		{
+			// Shift＋Alt＋ミドル押下: 既存マーク(リング＋変更数)を「通常(不透明)」で表示。peek(旧版べた載せ)とは別物で
+			// arm 不要(見せるだけ)。ハンドツールに切替えて枠を見ながら掴んで移動できる。離すと非表示へ戻す。
+			// マークが無ければ無反応(素のミドルを邪魔しない)。Shift 単独/ Alt 単独の peek 分岐より前に置く=吸われない。
+			const bool16 haveContent = !KESCMDrawEventHandler::sEntries.empty();
+			if (haveContent)
+			{
+				sFaintShowing = kTrue;
+				KESCMDrawEventHandler::sMarkScreenOpacity = 1.0;				// 通常=不透明(印刷30%中でも不透明で確認できる)
+				KESCMDrawEventHandler::sMarksVisible = kTrue;					// 押下中だけ表示
+				KESCMEnterHandTool();											// 枠を見ながら掴んで移動
+				KESCMInvalidateMarksDoc();
 			}
 		}
 		else if (sPeekArmed && e->ShiftKeyDown())
@@ -1874,13 +1974,14 @@ IEventDispatcher::EventTypeList KESCMPeekWatcher::WatchEvent(IEvent* e)
 		}
 		else if (!e->ShiftKeyDown() && !e->CmdKeyDown() && !e->OptionAltKeyDown())
 		{
-			// シングル動作(修飾キーなしミドル押下中): 全マーク(リング＋変更数)を「表示」にして、
-			// ハンドツールに切替えて「枠を見ながら掴んで移動」できるようにする。離す(kMButtonUp)と非表示へ戻す。
+			// シングル動作(修飾キーなしミドル押下中): 全マーク(リング＋変更数)を「約30%で薄表示」にして、
+			// ハンドツールに切替えて「枠を見ながら掴んで移動」できるようにする。離す(kMButtonUp)と非表示＋不透明度を戻す。
 			// マークが何も無い(エントリ無し)時は反応しない=素のミドルクリックを邪魔しない。
 			const bool16 haveContent = !KESCMDrawEventHandler::sEntries.empty();
 			if (haveContent)
 			{
 				sSingleShowing = kTrue;
+				KESCMDrawEventHandler::sMarkScreenOpacity = kKESCMFaintOpacity;	// ミドルのみ=30%薄表示
 				KESCMDrawEventHandler::sMarksVisible = kTrue;	// 押下中だけ枠等を表示
 				KESCMEnterHandTool();	// 枠を見ながら掴んで移動
 				KESCMInvalidateMarksDoc();
@@ -1914,9 +2015,18 @@ IEventDispatcher::EventTypeList KESCMPeekWatcher::WatchEvent(IEvent* e)
 		}
 		else if (sSingleShowing)
 		{
-			// シングルの押下を離した → 押下中だけ表示していた全マークを非表示(既定)へ戻す。
+			// ミドルのみの押下を離した → 30%表示を解除し、不透明度を基準値(印刷設定に応じた値)へ戻す＋非表示へ。
 			sSingleShowing = kFalse;
 			KESCMDrawEventHandler::sMarksVisible = kFalse;
+			KESCMDrawEventHandler::sMarkScreenOpacity = KESCMBaseScreenOpacity();
+			KESCMInvalidateMarksDoc();
+		}
+		else if (sFaintShowing)
+		{
+			// Shift＋Alt＋ミドルを離した → 通常(不透明)表示を解除し、不透明度を基準値へ戻す＋非表示へ。
+			sFaintShowing = kFalse;
+			KESCMDrawEventHandler::sMarksVisible = kFalse;
+			KESCMDrawEventHandler::sMarkScreenOpacity = KESCMBaseScreenOpacity();
 			KESCMInvalidateMarksDoc();
 		}
 	}
@@ -2374,6 +2484,18 @@ ErrorCode KESCMScriptProvider::MarkChangesDoc(ScriptID methodID, IScriptRequestD
 	KESCMCollectPageUIDs(targetDB, tPages);
 	KESCMCollectPageUIDs(sourceDB, sPages);
 
+	// 比較は同期実行で全ページをラスタ化するため時間がかかる。ループ前に「Comparing changes...」を出し、
+	// ForceRedraw で即時に1回描いてからループに入る(ブロック中も表示が見えるようにする)。完了後の
+	// 「ChangeMarker ON」表示は呼び出し側の kescmArmMousePeek がこのトーストを上書きして行う。
+	{
+		PMString busyMsg("Comparing changes...");
+		busyMsg.SetTranslatable(kFalse);
+		KESCMShowToast(targetDB, busyMsg, kKESCMToastDefaultMs);
+		InterfacePtr<IControlView> fv(Utils<ILayoutUIUtils>()->QueryFrontView());
+		if (fv != nil)
+			fv->ForceRedraw(nil, kTrue);	// ブロックする比較ループの前に同期描画
+	}
+
 	const size_t n = (tPages.size() < sPages.size()) ? tPages.size() : sPages.size();
 	int32 changedCount = 0;
 	for (size_t i = 0; i < n; ++i)
@@ -2435,7 +2557,16 @@ ErrorCode KESCMScriptProvider::SetPrintMarks(ScriptID methodID, IScriptRequestDa
 	if (data->ExtractRequestData(p_KESCMPrintMarksFlag, arg) == kSuccess)
 		arg.GetBoolean(&flag);
 
+	bool16 faint = kFalse;	// 省略時は通常不透明度(約70%)
+	ScriptData arg2;
+	if (data->ExtractRequestData(p_KESCMPrintFaintFlag, arg2) == kSuccess)
+		arg2.GetBoolean(&faint);
+
 	KESCMDrawEventHandler::sPrintMarks = flag;
+	KESCMDrawEventHandler::sPrintFaint = faint;
+	// 常時表示(画面)の不透明度を印刷設定に合わせて即反映: 印刷ON＋30%なら画面も 0.3、それ以外は 1.0。
+	// ミドル/Shift+Alt 押下中の一時値は離したとき KESCMBaseScreenOpacity() で同じ基準へ戻るので整合する。
+	KESCMDrawEventHandler::sMarkScreenOpacity = KESCMBaseScreenOpacity();
 
 	// 再描画(エントリはそのまま、画面の常時表示有無だけ反映)。
 	UIDRef ref = ::GetUIDRef(parent);
@@ -2449,7 +2580,11 @@ ErrorCode KESCMScriptProvider::SetPrintMarks(ScriptID methodID, IScriptRequestDa
 
 	PMString report;
 	report.SetTranslatable(kFalse);
-	report.Append(flag ? "kescm: marks will print (and stay visible on screen)" : "kescm: marks are screen-only (won't print)");
+	if (flag)
+		report.Append(faint ? "kescm: marks will print at ~25% (and stay visible on screen)"
+		                    : "kescm: marks will print at normal opacity (and stay visible on screen)");
+	else
+		report.Append("kescm: marks are screen-only (won't print)");
 	ScriptData rd; rd.SetPMString(report);
 	data->AppendReturnData(parent, methodID, rd);
 	return kSuccess;

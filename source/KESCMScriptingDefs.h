@@ -56,7 +56,8 @@ enum KESCMScriptProperties
 	// 'pKGx' (p_KESCMShowPageXFlag) is now free (kescmShowPageX removed)
 	// 'pKGo' (p_KESCMShowOversetFlag) is now free (kescmShowOverset removed)
 	p_KESCMToastMsg      = 'pKGt',	// p=param K=Kohaku G=KESCM t=toast text  : the message string shown briefly at screen center
-	p_KESCMPrintMarksFlag = 'pKGp'	// p=param K=Kohaku G=KESCM p=print flag  : kTrue to print the marks (default), kFalse to keep them screen-only
+	p_KESCMPrintMarksFlag = 'pKGp',	// p=param K=Kohaku G=KESCM p=print flag  : kTrue to print the marks (default), kFalse to keep them screen-only
+	p_KESCMPrintFaintFlag = 'pKGf'	// p=param K=Kohaku G=KESCM f=faint flag  : kTrue to print the marks at ~30% opacity, kFalse(default) for normal opacity
 	// 'pKGn' (p_KESCMSensitivity) is now free — sensitivity selector removed; detection is always CMYK 4ch diff>0
 };
 

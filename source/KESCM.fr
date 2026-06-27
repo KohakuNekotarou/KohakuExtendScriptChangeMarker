@@ -313,6 +313,7 @@ resource VersionedScriptElementInfo(2)
 				"Status string",
 				{
 					p_KESCMPrintMarksFlag, "print", "kTrue to print the marks (default), kFalse to keep them screen-only", BoolDefaultType(kTrue), kOptional,
+					p_KESCMPrintFaintFlag, "faint", "kTrue to print the marks at ~30% opacity, kFalse (default) for normal opacity", BoolDefaultType(kFalse), kOptional,
 				}
 			}
 
