@@ -14,8 +14,14 @@
 
 #include "BaseType.h"		// ErrorCode, bool16
 #include "PMString.h"
+#include "OMTypes.h"			// UID (typedef IDType<UID_tag>)
+#include <vector>
 
 class IDataBase;
+
+// Flatten every page UID of a document (spread order, then page order). Shared helper used by the
+// comparison (KESCMDoMarkChangesDoc) and the color sampler. Defined in KESCMScriptProvider.cpp.
+void		KESCMCollectPageUIDs(IDataBase* db, std::vector<UID>& out);
 
 // Compare every page of targetDB against the same-index page of sourceDB and (re)build the
 // change-mark overlay. outReport receives the same status string the scripting method returns.

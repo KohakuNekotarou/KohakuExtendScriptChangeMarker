@@ -48,7 +48,7 @@ resource StringTable (kSDKDefStringsResourceID + index_enUS)
                 kKESCMPrintCheckKey,			"Print comparison marks",
                 kKESCMOpacity25Key,				"25%",
                 kKESCMOpacityNormalKey,			"Normal",
-                kKESCMHintKey,					"<Shift/Ctrl/Alt can be released>\nMiddle button =\n  30% marks (while held)\nMiddle + Shift =\n  original (while held)\nMiddle + Alt =\n  original 50% (while held)\nMiddle + Ctrl =\n  refresh spread compare\nShift+Alt + middle =\n  marks (while held)\nMiddle + Shift+Ctrl+Alt =\n  color info (while held)",
+                kKESCMHintKey,					"<Shift/Ctrl/Alt can be released>\nMiddle button =\n  30% marks (while held)\nMiddle + Shift =\n  original (while held)\nMiddle + Alt =\n  original 50% (while held)\nMiddle + Ctrl =\n  refresh spread compare\nMiddle + Shift+Alt =\n  marks (while held)\nMiddle + Shift+Ctrl+Alt =\n  color info (while held)",
 
 		// ----- Misc strings
                 kKESCMAboutBoxStringKey,			kKESCMPluginName " [US], version " kKESCMVersion " by " kKESCMAuthor "\n\n" kSDKDefCopyrightStandardValue "\n\n" kSDKDefPartnersStandardValue_enUS,
