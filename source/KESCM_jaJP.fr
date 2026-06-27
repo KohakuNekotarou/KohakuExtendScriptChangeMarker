@@ -1,0 +1,66 @@
+//========================================================================================
+//  
+//  $File: $
+//  
+//  Owner: 
+//  
+//  $Author: $
+//  
+//  $DateTime: $
+//  
+//  $Revision: $
+//  
+//  $Change: $
+//  
+//  Copyright 1997-2008 Adobe Systems Incorporated. All rights reserved.
+//  
+//  NOTICE:  Adobe permits you to use, modify, and distribute this file in accordance 
+//  with the terms of the Adobe license agreement accompanying it.  If you have received
+//  this file from a source other than Adobe, then your use, modification, or 
+//  distribution of it requires the prior written permission of Adobe.
+//  
+//========================================================================================
+
+#ifdef __ODFRC__
+
+
+// Japanese string table is defined here
+
+resource StringTable (kSDKDefStringsResourceID + index_jaJP)
+{
+        k_jaJP,	// Locale Id
+        kResourceUTF8Encoded,	// Character encoding converter (this file is UTF-8, no BOM)
+
+        {
+        	// ----- Menu strings
+                kKESCMCompanyKey,					kKESCMCompanyValue,
+                kKESCMAboutMenuKey,					kKESCMPluginName "[JP]...",
+                kKESCMPluginsMenuKey,				kKESCMPluginName "[JP]",
+
+                // SDKDef.h の kSDKDefAboutThisPlugInMenuValue_jaJP は Shift-JIS 定義のため、UTF-8
+                // テーブル(kResourceUTF8Encoded)では使えない。UTF-8 リテラルで同じ文言を直接記述する。
+                kSDKDefAboutThisPlugInMenuKey,			"このプラグインについて…(&U)",
+
+                // ----- Command strings
+
+                // ----- Window strings
+
+                // ----- Panel/dialog strings
+                kKESCMPanelTitleKey,			"KohakuChangeMarker",
+                kKESCMStartButtonKey,			"開始",
+                kKESCMClearButtonKey,			"解除",
+                kKESCMPrintCheckKey,			"比較枠の印刷",
+                kKESCMOpacity25Key,				"25%",
+                kKESCMOpacityNormalKey,			"通常",
+                kKESCMHintKey,					"<ShiftCtrlAltは離せます>\n中マウスボタン=\n　30%比較枠(押中)\n中マウスボタン+Shift=\n　元(押中)\n中マウスボタン+Alt=\n　元50%(押中)\n中マウスボタン+Ctrl=\n　スプレッド単位の比較更新\nShift+Alt中マウスボタン=\n　比較枠(押中)\n中マウスボタン+Shift+Ctrl+Alt=\n　色情報(押中)",
+
+              // ----- Error strings
+
+                // ----- Misc strings
+                kKESCMAboutBoxStringKey,			kKESCMPluginName " [JP], version " kKESCMVersion " by " kKESCMAuthor "\n\n" kSDKDefCopyrightStandardValue "\n\n" kSDKDefPartnersStandardValue_jaJP,
+
+        }
+
+};
+
+#endif // __ODFRC__

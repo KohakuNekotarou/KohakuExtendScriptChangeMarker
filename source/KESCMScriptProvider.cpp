@@ -99,6 +99,7 @@
 // Project includes:
 #include "KESCMScriptingDefs.h"
 #include "KESCMID.h"
+#include "KESCMCore.h"				// shared ops exposed to the panel UI (KESCMPanelObserver.cpp)
 
 
 //========================================================================================
@@ -2392,6 +2393,136 @@ static bool16 KESCMSampleCmykUnderMouse(IDataBase* targetDB, IDataBase* sourceDB
 //   Page / Document オブジェクトに kescmMarkChangesDoc / kescmClearMarks / kescmArmMousePeek /
 //   kescmDisarmMousePeek / kescmToast / kescmSetPrintMarks を生やす。
 //========================================================================================
+//========================================================================================
+// Shared core operations (declared in KESCMCore.h).
+//
+// These are the bodies that used to live inline in the scripting methods below. They are now
+// plain (non-static) functions so the panel widget observer (KESCMPanelObserver.cpp) can drive
+// the exact same behavior. They run in this translation unit on purpose: that gives them direct
+// access to the overlay engine (KESCMDrawEventHandler) and the file-local peek state (sPeek*).
+//========================================================================================
+
+ErrorCode KESCMDoMarkChangesDoc(IDataBase* targetDB, IDataBase* sourceDB, PMString& outReport)
+{
+	if (targetDB == nil || sourceDB == nil)
+		return kFailure;
+
+	// ドキュメント単位の総入れ替え。
+	KESCMDrawEventHandler::DropAll();
+	KESCMDrawEventHandler::sDB = targetDB;
+
+	// 両ドキュメントのページUIDをドキュメント順に平坦列挙。
+	std::vector<UID> tPages, sPages;
+	KESCMCollectPageUIDs(targetDB, tPages);
+	KESCMCollectPageUIDs(sourceDB, sPages);
+
+	// 比較は同期実行で全ページをラスタ化するため時間がかかる。ループ前に「Comparing changes...」を出し、
+	// ForceRedraw で即時に1回描いてからループに入る(ブロック中も表示が見えるようにする)。
+	{
+		PMString busyMsg("Comparing changes...");
+		busyMsg.SetTranslatable(kFalse);
+		KESCMShowToast(targetDB, busyMsg, kKESCMToastDefaultMs);
+		InterfacePtr<IControlView> fv(Utils<ILayoutUIUtils>()->QueryFrontView());
+		if (fv != nil)
+			fv->ForceRedraw(nil, kTrue);	// ブロックする比較ループの前に同期描画
+	}
+
+	const size_t n = (tPages.size() < sPages.size()) ? tPages.size() : sPages.size();
+	int32 changedCount = 0;
+	for (size_t i = 0; i < n; ++i)
+	{
+		bool16 changed = kFalse;
+		KESCMDrawEventHandler::MakeEntry(UIDRef(targetDB, tPages[i]), UIDRef(sourceDB, sPages[i]), changed);
+		if (changed) ++changedCount;
+	}
+
+	InterfacePtr<IDocument> doc(targetDB, targetDB->GetRootUID(), UseDefaultIID());
+	if (doc != nil)
+		Utils<ILayoutUtils>()->InvalidateViews(doc);
+
+	PMString report;
+	report.SetTranslatable(kFalse);
+	report.Append("kescm: pages compared="); report.AppendNumber((int32)n);
+	report.Append(" changed="); report.AppendNumber(changedCount);
+	outReport = report;
+	return kSuccess;
+}
+
+void KESCMDoClearMarks(IDataBase* db)
+{
+	KESCMDrawEventHandler::DropAll();
+	KESCMDrawEventHandler::DropAllOrig();	// 旧版べた載せのキャッシュも解放(メモリ開放)
+
+	if (db != nil)
+	{
+		InterfacePtr<IDocument> doc(db, db->GetRootUID(), UseDefaultIID());
+		if (doc != nil)
+			Utils<ILayoutUtils>()->InvalidateViews(doc);
+	}
+}
+
+void KESCMDoSetPrintMarks(bool16 printFlag, bool16 faintFlag, IDataBase* db)
+{
+	KESCMDrawEventHandler::sPrintMarks = printFlag;
+	KESCMDrawEventHandler::sPrintFaint = faintFlag;
+	// 常時表示(画面)の不透明度を印刷設定に合わせて即反映。
+	KESCMDrawEventHandler::sMarkScreenOpacity = KESCMBaseScreenOpacity();
+
+	if (db != nil)
+	{
+		InterfacePtr<IDocument> doc(db, db->GetRootUID(), UseDefaultIID());
+		if (doc != nil)
+			Utils<ILayoutUtils>()->InvalidateViews(doc);
+	}
+}
+
+void KESCMDoArmMousePeek(IDataBase* targetDB, IDataBase* sourceDB)
+{
+	// arm 対象が変わったら古い peek キャッシュは捨てる。
+	if (sPeekSourceDB != sourceDB || sPeekTargetDB != targetDB)
+		KESCMDrawEventHandler::DropAllOrig();
+
+	sPeekTargetDB = targetDB;
+	sPeekSourceDB = sourceDB;
+	sPeekArmed = kTrue;
+	sPeekActive = kFalse;			// 覗き状態を初期化
+	sSingleShowing = kFalse;
+	KESCMDrawEventHandler::sMarksVisible = kFalse;	// 既定(非表示)へ。arm 中も枠は押下中だけ表示
+
+	PMString onMsg("ChangeMarker ON");
+	onMsg.SetTranslatable(kFalse);
+	KESCMShowToast(targetDB, onMsg, kKESCMToastDefaultMs);
+}
+
+void KESCMDoDisarmMousePeek(IDataBase* db)
+{
+	KESCMRestoreTool();	// ハンドに切替え中なら元のツールへ戻す
+	sPeekArmed = kFalse;
+	sPeekTargetDB = nil;
+	sPeekSourceDB = nil;
+	sPeekActive = kFalse;
+	sSingleShowing = kFalse;
+	KESCMDrawEventHandler::sMarksVisible = kFalse;	// 既定(非表示)のまま
+	KESCMDrawEventHandler::DropAllOrig();	// sShowOriginal も OFF にし、キャッシュを解放
+
+	if (db != nil)
+	{
+		InterfacePtr<IDocument> doc(db, db->GetRootUID(), UseDefaultIID());
+		if (doc != nil)
+			Utils<ILayoutUtils>()->InvalidateViews(doc);
+	}
+
+	PMString offMsg("ChangeMarker OFF");
+	offMsg.SetTranslatable(kFalse);
+	KESCMShowToast(db, offMsg, kKESCMToastDefaultMs);
+}
+
+// Panel state accessors (reflect the armed peek = "started" state).
+bool16     KESCMIsArmed()        { return sPeekArmed; }
+IDataBase* KESCMArmedTargetDB()  { return sPeekTargetDB; }
+IDataBase* KESCMArmedSourceDB()  { return sPeekSourceDB; }
+
+
 class KESCMScriptProvider : public CScriptProvider
 {
 public:
@@ -2470,49 +2601,14 @@ ErrorCode KESCMScriptProvider::MarkChangesDoc(ScriptID methodID, IScriptRequestD
 	InterfacePtr<IScript> srcScript(arg.QueryObject());
 	if (srcScript == nil)
 		return kFailure;
-	UIDRef srcDocRef = ::GetUIDRef(srcScript);
-	IDataBase* sourceDB = srcDocRef.GetDataBase();
+	IDataBase* sourceDB = ::GetUIDRef(srcScript).GetDataBase();
 	if (sourceDB == nil)
 		return kFailure;
 
-	// ドキュメント単位の総入れ替え。
-	KESCMDrawEventHandler::DropAll();
-	KESCMDrawEventHandler::sDB = targetDB;
-
-	// 両ドキュメントのページUIDをドキュメント順に平坦列挙。
-	std::vector<UID> tPages, sPages;
-	KESCMCollectPageUIDs(targetDB, tPages);
-	KESCMCollectPageUIDs(sourceDB, sPages);
-
-	// 比較は同期実行で全ページをラスタ化するため時間がかかる。ループ前に「Comparing changes...」を出し、
-	// ForceRedraw で即時に1回描いてからループに入る(ブロック中も表示が見えるようにする)。完了後の
-	// 「ChangeMarker ON」表示は呼び出し側の kescmArmMousePeek がこのトーストを上書きして行う。
-	{
-		PMString busyMsg("Comparing changes...");
-		busyMsg.SetTranslatable(kFalse);
-		KESCMShowToast(targetDB, busyMsg, kKESCMToastDefaultMs);
-		InterfacePtr<IControlView> fv(Utils<ILayoutUIUtils>()->QueryFrontView());
-		if (fv != nil)
-			fv->ForceRedraw(nil, kTrue);	// ブロックする比較ループの前に同期描画
-	}
-
-	const size_t n = (tPages.size() < sPages.size()) ? tPages.size() : sPages.size();
-	int32 changedCount = 0;
-	for (size_t i = 0; i < n; ++i)
-	{
-		bool16 changed = kFalse;
-		KESCMDrawEventHandler::MakeEntry(UIDRef(targetDB, tPages[i]), UIDRef(sourceDB, sPages[i]), changed);
-		if (changed) ++changedCount;
-	}
-
-	InterfacePtr<IDocument> doc(targetDB, targetDB->GetRootUID(), UseDefaultIID());
-	if (doc != nil)
-		Utils<ILayoutUtils>()->InvalidateViews(doc);
-
 	PMString report;
-	report.SetTranslatable(kFalse);
-	report.Append("kescm: pages compared="); report.AppendNumber((int32)n);
-	report.Append(" changed="); report.AppendNumber(changedCount);
+	if (KESCMDoMarkChangesDoc(targetDB, sourceDB, report) != kSuccess)
+		return kFailure;
+
 	ScriptData rd; rd.SetPMString(report);
 	data->AppendReturnData(parent, methodID, rd);
 	return kSuccess;
@@ -2527,15 +2623,7 @@ ErrorCode KESCMScriptProvider::ClearMarks(ScriptID methodID, IScriptRequestData*
 	UIDRef ref = ::GetUIDRef(parent);
 	IDataBase* db = ref.GetDataBase();
 
-	KESCMDrawEventHandler::DropAll();
-	KESCMDrawEventHandler::DropAllOrig();	// 旧版べた載せのキャッシュも解放(メモリ開放)
-
-	if (db != nil)
-	{
-		InterfacePtr<IDocument> doc(db, db->GetRootUID(), UseDefaultIID());
-		if (doc != nil)
-			Utils<ILayoutUtils>()->InvalidateViews(doc);
-	}
+	KESCMDoClearMarks(db);
 
 	PMString report("marks cleared");
 	report.SetTranslatable(kFalse);
@@ -2562,21 +2650,9 @@ ErrorCode KESCMScriptProvider::SetPrintMarks(ScriptID methodID, IScriptRequestDa
 	if (data->ExtractRequestData(p_KESCMPrintFaintFlag, arg2) == kSuccess)
 		arg2.GetBoolean(&faint);
 
-	KESCMDrawEventHandler::sPrintMarks = flag;
-	KESCMDrawEventHandler::sPrintFaint = faint;
-	// 常時表示(画面)の不透明度を印刷設定に合わせて即反映: 印刷ON＋30%なら画面も 0.3、それ以外は 1.0。
-	// ミドル/Shift+Alt 押下中の一時値は離したとき KESCMBaseScreenOpacity() で同じ基準へ戻るので整合する。
-	KESCMDrawEventHandler::sMarkScreenOpacity = KESCMBaseScreenOpacity();
-
-	// 再描画(エントリはそのまま、画面の常時表示有無だけ反映)。
 	UIDRef ref = ::GetUIDRef(parent);
 	IDataBase* db = ref.GetDataBase();
-	if (db != nil)
-	{
-		InterfacePtr<IDocument> doc(db, db->GetRootUID(), UseDefaultIID());
-		if (doc != nil)
-			Utils<ILayoutUtils>()->InvalidateViews(doc);
-	}
+	KESCMDoSetPrintMarks(flag, faint, db);
 
 	PMString report;
 	report.SetTranslatable(kFalse);
@@ -2609,28 +2685,11 @@ ErrorCode KESCMScriptProvider::ArmMousePeek(ScriptID methodID, IScriptRequestDat
 	InterfacePtr<IScript> srcScript(arg.QueryObject());
 	if (srcScript == nil)
 		return kFailure;
-	UIDRef srcDocRef = ::GetUIDRef(srcScript);
-	IDataBase* sourceDB = srcDocRef.GetDataBase();
+	IDataBase* sourceDB = ::GetUIDRef(srcScript).GetDataBase();
 	if (sourceDB == nil)
 		return kFailure;
 
-	// arm 対象が変わったら古い peek キャッシュは捨てる。
-	if (sPeekSourceDB != sourceDB || sPeekTargetDB != targetDB)
-		KESCMDrawEventHandler::DropAllOrig();
-
-	sPeekTargetDB = targetDB;
-	sPeekSourceDB = sourceDB;
-	sPeekArmed = kTrue;
-	sPeekActive = kFalse;			// 覗き状態を初期化
-	sSingleShowing = kFalse;
-	KESCMDrawEventHandler::sMarksVisible = kFalse;	// 既定(非表示)へ。arm 中も枠は押下中だけ表示
-
-	// 画面中央に「ChangeMarker ON」を少し表示(自動消去)。
-	{
-		PMString onMsg("ChangeMarker ON");
-		onMsg.SetTranslatable(kFalse);
-		KESCMShowToast(targetDB, onMsg, kKESCMToastDefaultMs);
-	}
+	KESCMDoArmMousePeek(targetDB, sourceDB);
 
 	PMString report("kescm: mouse peek armed (Shift+middle-click and hold over a spread)");
 	report.SetTranslatable(kFalse);
@@ -2645,30 +2704,9 @@ ErrorCode KESCMScriptProvider::ArmMousePeek(ScriptID methodID, IScriptRequestDat
 */
 ErrorCode KESCMScriptProvider::DisarmMousePeek(ScriptID methodID, IScriptRequestData* data, IScript* parent)
 {
-	KESCMRestoreTool();	// ハンドに切替え中なら元のツールへ戻す
-	sPeekArmed = kFalse;
-	sPeekTargetDB = nil;
-	sPeekSourceDB = nil;
-	sPeekActive = kFalse;
-	sSingleShowing = kFalse;
-	KESCMDrawEventHandler::sMarksVisible = kFalse;	// 既定(非表示)のまま。枠等はシングルミドル押下中だけ
-	KESCMDrawEventHandler::DropAllOrig();	// sShowOriginal も OFF にし、キャッシュを解放
-
 	UIDRef ref = ::GetUIDRef(parent);
 	IDataBase* db = ref.GetDataBase();
-	if (db != nil)
-	{
-		InterfacePtr<IDocument> doc(db, db->GetRootUID(), UseDefaultIID());
-		if (doc != nil)
-			Utils<ILayoutUtils>()->InvalidateViews(doc);
-	}
-
-	// 画面中央に「ChangeMarker OFF」を少し表示(自動消去)。
-	{
-		PMString offMsg("ChangeMarker OFF");
-		offMsg.SetTranslatable(kFalse);
-		KESCMShowToast(db, offMsg, kKESCMToastDefaultMs);
-	}
+	KESCMDoDisarmMousePeek(db);
 
 	PMString report("kescm: mouse peek disarmed");
 	report.SetTranslatable(kFalse);

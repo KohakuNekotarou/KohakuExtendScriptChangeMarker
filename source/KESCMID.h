@@ -54,6 +54,8 @@ DECLARE_PMID(kClassIDSpace, kKESCMDrawEventServiceBoss, kKESCMPrefix + 4)
 DECLARE_PMID(kClassIDSpace, kKESCMPeekWatcherBoss, kKESCMPrefix + 5)	// IEventWatcher: middle-button peek (snoop kMButtonDn/Up)
 DECLARE_PMID(kClassIDSpace, kKESCMPeekStartupBoss, kKESCMPrefix + 6)	// IStartupShutdown: starts the peek watcher at app launch
 DECLARE_PMID(kClassIDSpace, kKESCMToastIdleTaskBoss, kKESCMPrefix + 7)	// IIdleTask: auto-dismiss the on-canvas toast message
+DECLARE_PMID(kClassIDSpace, kKESCMPanelWidgetBoss, kKESCMPrefix + 8)	// the ChangeMarker control panel (palette)
+DECLARE_PMID(kClassIDSpace, kKESCMActionComponentBoss, kKESCMPrefix + 9)	// About menu action component
 //DECLARE_PMID(kClassIDSpace, kKESCMBoss, kKESCMPrefix + 6)
 //DECLARE_PMID(kClassIDSpace, kKESCMBoss, kKESCMPrefix + 8)
 //DECLARE_PMID(kClassIDSpace, kKESCMBoss, kKESCMPrefix + 9)
@@ -111,6 +113,8 @@ DECLARE_PMID(kImplementationIDSpace, kKESCMDrawEventHandlerImpl, kKESCMPrefix + 
 DECLARE_PMID(kImplementationIDSpace, kKESCMPeekWatcherImpl, kKESCMPrefix + 3)	// IEventWatcher impl (middle-button peek)
 DECLARE_PMID(kImplementationIDSpace, kKESCMPeekStartupImpl, kKESCMPrefix + 4)	// IStartupShutdown impl (starts the peek watcher)
 DECLARE_PMID(kImplementationIDSpace, kKESCMToastIdleTaskImpl, kKESCMPrefix + 5)	// IIdleTask impl (auto-dismiss toast)
+DECLARE_PMID(kImplementationIDSpace, kKESCMPanelObserverImpl, kKESCMPrefix + 6)	// IObserver impl (panel widget observer)
+DECLARE_PMID(kImplementationIDSpace, kKESCMActionComponentImpl, kKESCMPrefix + 7)	// IActionComponent impl (About)
 //DECLARE_PMID(kImplementationIDSpace, kKESCMImpl, kKESCMPrefix + 6)
 //DECLARE_PMID(kImplementationIDSpace, kKESCMImpl, kKESCMPrefix + 7)
 //DECLARE_PMID(kImplementationIDSpace, kKESCMImpl, kKESCMPrefix + 8)
@@ -135,6 +139,8 @@ DECLARE_PMID(kImplementationIDSpace, kKESCMToastIdleTaskImpl, kKESCMPrefix + 5)	
 
 // ActionIDs:
 DECLARE_PMID(kActionIDSpace, kKESCMAboutActionID, kKESCMPrefix + 0)
+DECLARE_PMID(kActionIDSpace, kKESCMPanelWidgetActionID, kKESCMPrefix + 1)	// shows/hides the panel (Window menu)
+DECLARE_PMID(kActionIDSpace, kKESCMPopupAboutThisActionID, kKESCMPrefix + 2)	// "About this plug-in" on the panel flyout
 //DECLARE_PMID(kActionIDSpace, kKESCMActionID, kKESCMPrefix + 5)
 //DECLARE_PMID(kActionIDSpace, kKESCMActionID, kKESCMPrefix + 6)
 //DECLARE_PMID(kActionIDSpace, kKESCMActionID, kKESCMPrefix + 7)
@@ -159,6 +165,19 @@ DECLARE_PMID(kActionIDSpace, kKESCMAboutActionID, kKESCMPrefix + 0)
 
 
 // WidgetIDs:
+DECLARE_PMID(kWidgetIDSpace, kKESCMPanelWidgetID, kKESCMPrefix + 0)
+DECLARE_PMID(kWidgetIDSpace, kKESCMTargetTextWidgetID, kKESCMPrefix + 1)
+DECLARE_PMID(kWidgetIDSpace, kKESCMSourceTextWidgetID, kKESCMPrefix + 26)
+DECLARE_PMID(kWidgetIDSpace, kKESCMStartButtonWidgetID, kKESCMPrefix + 27)
+DECLARE_PMID(kWidgetIDSpace, kKESCMClearButtonWidgetID, kKESCMPrefix + 28)
+DECLARE_PMID(kWidgetIDSpace, kKESCMPrintCheckWidgetID, kKESCMPrefix + 29)
+DECLARE_PMID(kWidgetIDSpace, kKESCMOpacityClusterWidgetID, kKESCMPrefix + 30)
+DECLARE_PMID(kWidgetIDSpace, kKESCMOpacity25RadioWidgetID, kKESCMPrefix + 31)
+DECLARE_PMID(kWidgetIDSpace, kKESCMOpacityNormalRadioWidgetID, kKESCMPrefix + 32)
+DECLARE_PMID(kWidgetIDSpace, kKESCMHintTextWidgetID, kKESCMPrefix + 33)
+DECLARE_PMID(kWidgetIDSpace, kKESCMIconOnWidgetID, kKESCMPrefix + 34)
+DECLARE_PMID(kWidgetIDSpace, kKESCMIconOffWidgetID, kKESCMPrefix + 35)
+DECLARE_PMID(kWidgetIDSpace, kKESCMStatusTextWidgetID, kKESCMPrefix + 36)
 //DECLARE_PMID(kWidgetIDSpace, kKESCMWidgetID, kKESCMPrefix + 2)
 //DECLARE_PMID(kWidgetIDSpace, kKESCMWidgetID, kKESCMPrefix + 3)
 //DECLARE_PMID(kWidgetIDSpace, kKESCMWidgetID, kKESCMPrefix + 4)
@@ -212,7 +231,26 @@ DECLARE_PMID(kScriptInfoIDSpace, kKESCMSetPrintMarksMethodScriptElement, kKESCMP
 #define kKESCMAboutBoxStringKey	kKESCMStringPrefix "kKESCMAboutBoxStringKey"
 #define kKESCMTargetMenuPath kKESCMPluginsMenuPath
 
+// Panel: internal flyout (popup) menu name + its menu path.
+#define kKESCMInternalPopupMenuNameKey	kKESCMStringPrefix "kKESCMInternalPopupMenuNameKey"
+#define kKESCMPopupMenuPath				kKESCMInternalPopupMenuNameKey
+
+// Panel string keys (localized via KESCM_enUS.fr / KESCM_jaJP.fr).
+#define kKESCMPanelTitleKey		kKESCMStringPrefix "kKESCMPanelTitleKey"
+#define kKESCMStartButtonKey	kKESCMStringPrefix "kKESCMStartButtonKey"
+#define kKESCMClearButtonKey	kKESCMStringPrefix "kKESCMClearButtonKey"
+#define kKESCMPrintCheckKey		kKESCMStringPrefix "kKESCMPrintCheckKey"
+#define kKESCMOpacity25Key		kKESCMStringPrefix "kKESCMOpacity25Key"
+#define kKESCMOpacityNormalKey	kKESCMStringPrefix "kKESCMOpacityNormalKey"
+#define kKESCMHintKey			kKESCMStringPrefix "kKESCMHintKey"
+
+// PNG icon resources (compiled into the plug-in; no separate file ships with the .pln).
+#define kKESCMIconOnResID	1001
+#define kKESCMIconOffResID	1002
+#define kKESCMPaletteIconResID	1003	// small dock-tab icon shown when the panel is collapsed
+
 // Menu item positions:
+#define kKESCMAboutThisMenuItemPosition		11.0
 
 
 // Initial data format version numbers

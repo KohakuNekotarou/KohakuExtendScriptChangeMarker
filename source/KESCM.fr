@@ -40,6 +40,13 @@
 #include "BuildNumber.h"
 #include "PlugInModel_UIAttributes.h"
 
+// Panel / widget resources:
+#include "PanelList.fh"
+#include "Widgets.fh"				// PalettePanelWidget and the standard control widgets
+#include "InterfaceColorDefines.h"
+#include "IControlViewDefs.h"
+#include "SysControlIds.h"
+
 #include "ScriptInfoTypes.fh"
 #include "AppFrameworkID.h"
 
@@ -70,7 +77,7 @@ resource PluginVersion (kSDKDefPluginVersionResourceID)
 	kKESCMCurrentMajorFormatNumber, kKESCMCurrentMinorFormatNumber,
 	{ kInDesignProduct },
 	{ kWildFS },
-	kModelPlugIn,
+	kUIPlugIn,
 	kKESCMVersion
 };
 
@@ -144,6 +151,28 @@ resource ClassDescriptionTable(kSDKDefClassDescriptionTableResourceID)
 			IID_IIDLETASK, kKESCMToastIdleTaskImpl,
 		}
 	},
+
+	// Action component: handles the About menu items (main menu + panel flyout).
+	Class
+	{
+		kKESCMActionComponentBoss,
+		kBaseActionComponentBoss,
+		{
+			IID_IACTIONCOMPONENT, kKESCMActionComponentImpl,
+		}
+	},
+
+	// The ChangeMarker control panel (palette). The observer drives the Start/Clear/print controls
+	// and the popup (flyout) menu data hosts the "About this plug-in" item.
+	Class
+	{
+		kKESCMPanelWidgetBoss,
+		kPalettePanelWidgetBoss,
+		{
+			IID_IPANELMENUDATA, kCPanelMenuDataImpl,
+			IID_IOBSERVER, kKESCMPanelObserverImpl,
+		}
+	},
 }}};
 
 /*  
@@ -154,6 +183,55 @@ resource FactoryList (kSDKDefFactoryListResourceID)
 	kImplementationIDSpace,
 	{
 		#include "KESCMFactoryList.h"
+	}
+};
+
+
+/*
+ * Menu definition: the About Plug-ins entry (main menu) and the "About this plug-in" entry on
+ * the panel's flyout (popup) menu. The panel itself appears under the Window menu automatically
+ * (registered via the PanelList resource below), so no menu entry is needed for showing it.
+ */
+resource MenuDef (kSDKDefMenuResourceID)
+{
+	{
+		// About Plug-ins sub-menu item.
+		kKESCMAboutActionID,
+		kKESCMAboutMenuPath,
+		kSDKDefAlphabeticPosition,
+		kSDKDefIsNotDynamicMenuFlag,
+
+		// "About this plug-in" on the panel flyout (popup) menu.
+		kKESCMPopupAboutThisActionID,
+		kKESCMPopupMenuPath,
+		kKESCMAboutThisMenuItemPosition,
+		kSDKDefIsNotDynamicMenuFlag,
+	}
+};
+
+/*
+ * Action definition for the menu items above.
+ */
+resource ActionDef (kSDKDefActionResourceID)
+{
+	{
+		kKESCMActionComponentBoss,			// boss that implements the action
+		kKESCMAboutActionID,				// ActionID
+		kKESCMAboutMenuKey,					// sub-menu string
+		kHelpMenuActionArea,				// area name
+		kNormalAction,						// action type
+		kDisableIfLowMem,					// enabling type
+		kInvalidInterfaceID,				// selection interface this action cares about
+		kSDKDefInvisibleInKBSCEditorFlag,	// KBSC editor visibility
+
+		kKESCMActionComponentBoss,
+		kKESCMPopupAboutThisActionID,
+		kSDKDefAboutThisPlugInMenuKey,
+		kOtherActionArea,
+		kNormalAction,
+		kDisableIfLowMem,
+		kInvalidInterfaceID,
+		kSDKDefInvisibleInKBSCEditorFlag,
 	}
 };
 
@@ -201,6 +279,8 @@ resource StringTable (kSDKDefStringsNoTransResourceID + index_enUS)
 	k_enUS,									// Locale Id
 	kEuropeanMacToWinEncodingConverter,		// Character encoding converter
 	{
+		// Internal popup (flyout) menu name - not translated.
+		kKESCMInternalPopupMenuNameKey,	kKESCMInternalPopupMenuNameKey,
 	}
 };
 /*
@@ -346,7 +426,220 @@ resource VersionedScriptElementInfo(2)
 	}
 };
 
-	
+
+//========================================================================================
+// ChangeMarker control panel (palette)
+//========================================================================================
+
+// PNG icons (compiled into the plug-in; ON = armed/comparing, OFF = idle). Same art is used for
+// the normal and rollover states since this is a non-interactive status icon.
+resource PNGA(kKESCMIconOnResID)  "KohakuExtendScriptChangeMarkerON64.png"
+resource PNGR(kKESCMIconOnResID)  "KohakuExtendScriptChangeMarkerON64.png"
+resource PNGA(kKESCMIconOffResID) "KohakuExtendScriptChangeMarkerOFF64.png"
+resource PNGR(kKESCMIconOffResID) "KohakuExtendScriptChangeMarkerOFF64.png"
+
+// Small dock-tab icon shown when the panel is collapsed to its smallest. Replace
+// KohakuChangeMarkerTab.png with your own artwork (a small, e.g. ~20x20, transparent PNG).
+resource PNGA(kKESCMPaletteIconResID) "KohakuChangeMarkerTab.png"
+
+// Panel LocaleIndex - a single (string-key driven) view is used for every locale; the labels
+// themselves are localized through the string tables (KESCM_enUS.fr / KESCM_jaJP.fr).
+resource LocaleIndex (kSDKDefPanelResourceID)
+{
+	kViewRsrcType,
+	{
+		kWildFS, k_Wild, kSDKDefPanelResourceID + index_enUS
+	}
+};
+
+// Type definition for the panel widget boss.
+type KESCMPanelWidget(kViewRsrcType) : PalettePanelWidget(ClassID = kKESCMPanelWidgetBoss)
+{
+	CPanelMenuData;
+};
+
+// PanelList - registers the panel and makes it appear under the Window menu.
+resource PanelList (kSDKDefPanelResourceID)
+{
+	{
+		kSDKDefPanelResourceID,		// Resource ID for this panel
+		kKESCMPluginID,				// owning plug-in
+		kNotResizable,				// fixed-size panel
+		kKESCMPanelWidgetActionID,	// Action ID to show/hide the panel
+		kKESCMPanelTitleKey,		// Window menu / title
+		"",							// no alternate menu path
+		0.0,						// alternate menu position
+		kKESCMPaletteIconResID, kKESCMPluginID,	// PNG icon for the collapsed dock tab
+		c_Panel
+	}
+};
+
+// PanelView - widget layout. Labels reference string keys so they localize automatically.
+resource KESCMPanelWidget(kSDKDefPanelResourceID + index_enUS)
+{
+	__FILE__, __LINE__,
+	kKESCMPanelWidgetID,			// WidgetID
+	kPMRsrcID_None,					// RsrcID
+	kBindNone,						// Binding
+	0, 0, 240, 580,					// Frame: left, top, right, bottom
+	kTrue, kTrue,					// Visible, Enabled
+	kFalse,							// Erase background
+	kInterfacePaletteFill,			// Erase to color
+	kFalse,							// Draw dropshadow
+	kKESCMPanelTitleKey,			// Panel name
+	{
+		// Target / Source status (label stays English; the document name is filled in by the observer).
+		StaticTextWidget
+		(
+			kKESCMTargetTextWidgetID,
+			kSysStaticTextPMRsrcId,
+			kBindLeft | kBindRight | kBindTop,
+			Frame(8, 8, 232, 24)
+			kTrue, kTrue,
+			kAlignLeft, kEllipsizeEnd, kTrue,
+			"Target:",
+			kInvalidWidgetID,
+		),
+		StaticTextWidget
+		(
+			kKESCMSourceTextWidgetID,
+			kSysStaticTextPMRsrcId,
+			kBindLeft | kBindRight | kBindTop,
+			Frame(8, 26, 232, 42)
+			kTrue, kTrue,
+			kAlignLeft, kEllipsizeEnd, kTrue,
+			"Source:",
+			kInvalidWidgetID,
+		),
+
+		// Separator.
+		SeparatorWidget
+		(
+			kInvalidWidgetID, kPMRsrcID_None,
+			kBindLeft | kBindRight | kBindTop,
+			Frame(0, 48, 240, 50)
+			kTrue, kTrue,
+		),
+
+		// Start / Clear buttons.
+		ButtonWidget
+		(
+			kKESCMStartButtonWidgetID,
+			kSysButtonPMRsrcId,
+			kBindLeft | kBindRight | kBindTop,
+			Frame(12, 56, 228, 80)
+			kTrue, kTrue,
+			kKESCMStartButtonKey,
+		),
+		ButtonWidget
+		(
+			kKESCMClearButtonWidgetID,
+			kSysButtonPMRsrcId,
+			kBindLeft | kBindRight | kBindTop,
+			Frame(12, 84, 228, 108)
+			kTrue, kTrue,
+			kKESCMClearButtonKey,
+		),
+
+		// Print marks checkbox.
+		CheckBoxWidget
+		(
+			kKESCMPrintCheckWidgetID,
+			kSysCheckBoxPMRsrcId,
+			kBindLeft | kBindTop,
+			Frame(12, 116, 228, 132)
+			kTrue, kTrue,
+			kAlignLeft,
+			kKESCMPrintCheckKey,
+		),
+
+		// Print opacity (25% / Normal). Order 25% -> Normal, default 25% (set by the observer).
+		ClusterPanelWidget
+		(
+			kKESCMOpacityClusterWidgetID,
+			kPMRsrcID_None,
+			kBindLeft | kBindTop,
+			Frame(12, 138, 228, 188)
+			kTrue, kTrue,
+			"",
+			{
+				RadioButtonWidget
+				(
+					kKESCMOpacity25RadioWidgetID,
+					kSysRadioButtonPMRsrcId,
+					kBindNone,
+					Frame(6, 4, 210, 20)
+					kTrue, kTrue,
+					kKESCMOpacity25Key,
+				),
+				RadioButtonWidget
+				(
+					kKESCMOpacityNormalRadioWidgetID,
+					kSysRadioButtonPMRsrcId,
+					kBindNone,
+					Frame(6, 24, 210, 40)
+					kTrue, kTrue,
+					kKESCMOpacityNormalKey,
+				),
+			}
+		),
+
+		// Usage hint (gesture reference).
+		StaticMultiLineTextWidget
+		(
+			kKESCMHintTextWidgetID,
+			kPMRsrcID_None,
+			kBindLeft | kBindRight | kBindTop,
+			Frame(8, 194, 232, 452)
+			kTrue, kTrue,
+			kAlignLeft, kDontEllipsize, kTrue,
+			kInvalidWidgetID,
+			kPaletteWindowFontId,
+			3,
+			0, 0,
+			kKESCMHintKey,
+		),
+
+		// Status icon (OFF visible by default; the observer swaps ON/OFF based on the armed state).
+		RollOverIconButtonWidget
+		(
+			kKESCMIconOffWidgetID,
+			kKESCMIconOffResID, kKESCMPluginID,
+			kBindTop,
+			Frame(88, 458, 152, 522)
+			kTrue, kTrue,
+			kADBEIconSuiteButtonType,
+		),
+		RollOverIconButtonWidget
+		(
+			kKESCMIconOnWidgetID,
+			kKESCMIconOnResID, kKESCMPluginID,
+			kBindTop,
+			Frame(88, 458, 152, 522)
+			kFalse, kTrue,
+			kADBEIconSuiteButtonType,
+		),
+
+		// Status text (filled in by the observer with the result of each action).
+		StaticMultiLineTextWidget
+		(
+			kKESCMStatusTextWidgetID,
+			kPMRsrcID_None,
+			kBindLeft | kBindRight | kBindBottom,
+			Frame(8, 528, 232, 576)
+			kTrue, kTrue,
+			kAlignLeft, kDontEllipsize, kTrue,
+			kInvalidWidgetID,
+			kPaletteWindowFontId,
+			3,
+			2, 0,
+			"",
+		),
+	}
+
+	kKESCMInternalPopupMenuNameKey		// Popup (flyout) menu name (internal)
+};
+
 #endif // __ODFRC__
 
 #include "KESCM_enUS.fr"

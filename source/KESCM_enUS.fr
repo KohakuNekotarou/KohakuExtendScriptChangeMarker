@@ -1,0 +1,61 @@
+//========================================================================================
+//  
+//  $File: $
+//  
+//  Owner: 
+//  
+//  $Author: $
+//  
+//  $DateTime: $
+//  
+//  $Revision: $
+//  
+//  $Change: $
+//  
+//  Copyright 1997-2012 Adobe Systems Incorporated. All rights reserved.
+//  
+//  NOTICE:  Adobe permits you to use, modify, and distribute this file in accordance 
+//  with the terms of the Adobe license agreement accompanying it.  If you have received
+//  this file from a source other than Adobe, then your use, modification, or 
+//  distribution of it requires the prior written permission of Adobe.
+//  
+//========================================================================================
+
+#ifdef __ODFRC__
+
+// English string table is defined here
+
+resource StringTable (kSDKDefStringsResourceID + index_enUS)
+{
+        k_enUS,									// Locale Id
+        kEuropeanWinToMacEncodingConverter,		// Character encoding converter (irp) I made this WinToMac as we have a bias to generate on Win...
+        {
+        	 // ----- Menu strings
+                kKESCMCompanyKey,					kKESCMCompanyValue,
+                kKESCMAboutMenuKey,					kKESCMPluginName "[US]...",
+                kKESCMPluginsMenuKey,				kKESCMPluginName "[US]",
+	
+                kSDKDefAboutThisPlugInMenuKey,			kSDKDefAboutThisPlugInMenuValue_enUS,
+
+                // ----- Command strings
+
+                // ----- Window strings
+
+                // ----- Panel/dialog strings
+                kKESCMPanelTitleKey,			"KohakuChangeMarker",
+                kKESCMStartButtonKey,			"Start",
+                kKESCMClearButtonKey,			"Clear",
+                kKESCMPrintCheckKey,			"Print comparison marks",
+                kKESCMOpacity25Key,				"25%",
+                kKESCMOpacityNormalKey,			"Normal",
+                kKESCMHintKey,					"<Shift/Ctrl/Alt can be released>\nMiddle button =\n  30% marks (while held)\nMiddle + Shift =\n  original (while held)\nMiddle + Alt =\n  original 50% (while held)\nMiddle + Ctrl =\n  refresh spread compare\nShift+Alt + middle =\n  marks (while held)\nMiddle + Shift+Ctrl+Alt =\n  color info (while held)",
+
+		// ----- Misc strings
+                kKESCMAboutBoxStringKey,			kKESCMPluginName " [US], version " kKESCMVersion " by " kKESCMAuthor "\n\n" kSDKDefCopyrightStandardValue "\n\n" kSDKDefPartnersStandardValue_enUS,
+
+		
+        }
+
+};
+
+#endif // __ODFRC__
