@@ -1,11 +1,11 @@
-//========================================================================================
+﻿//========================================================================================
 //
 //  KESCMCore.h
 //
-//  Shared ChangeMarker (KESCM) operations, callable from both the script provider and the
-//  panel UI. The overlay engine and all of its file-local state live in KESCMScriptProvider.cpp;
-//  these thin entry points let the panel widget observer drive the exact same behavior the
-//  scripting methods do (Start = mark changes + arm peek, Clear = clear marks + disarm peek, etc.).
+//  ChangeMarker (KESCM) の共有操作。スクリプトプロバイダとパネル UI の両方から呼べる。
+//  描画エンジン本体とその file-local 状態は KESCMDrawEventHandler.cpp にあり、ここはその薄い
+//  入口として、パネルのウィジェットオブザーバがスクリプトメソッドと完全に同じ挙動を駆動できるように
+//  する(Start = 変更マーク＋peek arm、Clear = マーク消去＋peek disarm、など)。
 //
 //========================================================================================
 
@@ -14,31 +14,53 @@
 
 #include "BaseType.h"		// ErrorCode, bool16
 #include "PMString.h"
+#include "PMReal.h"			// PMReal(ヒットテストヘルパのマウス座標)
 #include "OMTypes.h"			// UID (typedef IDType<UID_tag>)
 #include <vector>
 
 class IDataBase;
+class IControlView;
 
-// Flatten every page UID of a document (spread order, then page order). Shared helper used by the
-// comparison (KESCMDoMarkChangesDoc) and the color sampler. Defined in KESCMScriptProvider.cpp.
+// ドキュメント内の全ページUIDを、スプレッド順・ページ順で平坦に集める。比較(KESCMDoMarkChangesDoc)と
+// 色サンプラが共有するヘルパ。実体は KESCMCore.cpp。
 void		KESCMCollectPageUIDs(IDataBase* db, std::vector<UID>& out);
 
-// Compare every page of targetDB against the same-index page of sourceDB and (re)build the
-// change-mark overlay. outReport receives the same status string the scripting method returns.
+// 現在のマウス位置を、このビューの content(ペーストボード)座標で読む(画面→窓→content)。view が nil なら
+// kFalse。peek と色サンプラが同じ流儀でカーソル位置を求めるための共有ヘルパ。
+bool16		KESCMQueryMouseContentPoint(IControlView* view, PMReal& outX, PMReal& outY);
+
+// マウス下のページを特定した結果(KESCMFindPageUnderMouse 参照)。平坦ページ番号は KESCMCollectPageUIDs と
+// 一致するので、globalPageBase + hitPageIndex が旧ドキュメントの平坦ページ列にそのまま対応する。
+struct KESCMPageHit
+{
+	int32 spreadIndex;		// 当たったスプレッドのスプレッドリスト内インデックス
+	UID   spreadUID;		// そのスプレッドのUID(必要に応じて ISpread を引き直す)
+	int32 numPages;			// そのスプレッドのページ数
+	int32 globalPageBase;	// このスプレッド先頭の平坦ページ番号
+	int32 hitPageIndex;		// スプレッド内でカーソル下にあるページの 0 始まりインデックス
+	UID   hitPageUID;		// そのページのUID
+};
+
+// マウス(content/ペーストボード座標)を targetDB の全ページにスプレッド順・ページ順でヒットテストする。
+// 最初に (mx,my) を含むページで 'out' を埋めて kTrue を返す。無ヒットなら kFalse。
+bool16		KESCMFindPageUnderMouse(IDataBase* targetDB, PMReal mx, PMReal my, KESCMPageHit& out);
+
+// targetDB の各ページを sourceDB の同番号ページと比較し、変更マークのオーバーレイを(再)構築する。
+// outReport にはスクリプトメソッドが返すのと同じ状態文字列が入る。
 ErrorCode	KESCMDoMarkChangesDoc(IDataBase* targetDB, IDataBase* sourceDB, PMString& outReport);
 
-// Drop the whole overlay (and the cached old-version images) and redraw db.
+// オーバーレイ全体(と旧版画像のキャッシュ)を破棄し、db を再描画する。
 void		KESCMDoClearMarks(IDataBase* db);
 
-// Toggle whether the marks print (and stay visible on screen). faintFlag = print at ~25%.
+// マークを印刷に出すか(かつ画面に常時表示するか)を切り替える。faintFlag = 約25%で印刷。
 void		KESCMDoSetPrintMarks(bool16 printFlag, bool16 faintFlag, IDataBase* db);
 
-// Arm / disarm the middle-button peek of the old version (also drives the panel's ON/OFF state).
+// 旧版のミドルボタン peek を arm / disarm する(パネルの ON/OFF 状態も駆動する)。
 void		KESCMDoArmMousePeek(IDataBase* targetDB, IDataBase* sourceDB);
 void		KESCMDoDisarmMousePeek(IDataBase* db);
 
-// Panel state accessors. "Armed" == the Start button has run and Clear has not; the panel shows
-// the Target/Source names and the ON icon while armed, and hides the names + shows OFF otherwise.
+// パネルの状態アクセサ。"Armed" == Start ボタンが実行済みで Clear がまだ、の状態。arm 中はパネルが
+// Target/Source 名と ON アイコンを表示し、それ以外では名前を隠して OFF を表示する。
 bool16		KESCMIsArmed();
 IDataBase*	KESCMArmedTargetDB();
 IDataBase*	KESCMArmedSourceDB();

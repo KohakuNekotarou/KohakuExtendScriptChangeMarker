@@ -2,10 +2,9 @@
 //
 //  KESCMCore.cpp
 //
-//  Shared ChangeMarker operations (declared in KESCMCore.h), split out of
-//  KESCMScriptProvider.cpp. These are plain functions so both the scripting methods and the
-//  panel widget observer drive the exact same behavior. They delegate to the overlay engine
-//  (KESCMDrawEventHandler), the toast helper, and the peek module.
+//  ChangeMarker の共有操作(KESCMCore.h で宣言)。KESCMScriptProvider.cpp から分離したもの。
+//  スクリプトメソッドとパネルのウィジェットオブザーバが完全に同じ挙動を駆動できるよう、ただの関数に
+//  してある。描画エンジン(KESCMDrawEventHandler)・トーストヘルパ・peek モジュールへ委譲する。
 //
 //========================================================================================
 
@@ -17,14 +16,20 @@
 #include "ILayoutUtils.h"
 #include "ILayoutUIUtils.h"
 #include "IControlView.h"
+#include "IEventUtils.h"
+#include "IGeometry.h"
 #include "ISpread.h"
 #include "ISpreadList.h"
 #include "PMString.h"
+#include "PMMatrix.h"
+#include "PMPoint.h"
+#include "PMRect.h"
+#include "TransformUtils.h"
 
 #include <vector>
 
 #include "KESCMConstants.h"
-#include "KESCMDrawEventHandler.h"   // overlay engine + shared statics
+#include "KESCMDrawEventHandler.h"   // 描画エンジン＋共有 static
 #include "KESCMToast.h"              // KESCMShowToast
 #include "KESCMPeek.h"               // KESCMBaseScreenOpacity
 #include "KESCMCore.h"
@@ -53,12 +58,77 @@ void KESCMCollectPageUIDs(IDataBase* db, std::vector<UID>& out)
 }
 
 //========================================================================================
-// Shared core operations (declared in KESCMCore.h).
+// マウス位置・ヒットテストの共有ヘルパ(peek と色サンプラが同じ流儀でカーソル位置を求める)。
+//========================================================================================
+bool16 KESCMQueryMouseContentPoint(IControlView* view, PMReal& outX, PMReal& outY)
+{
+	outX = 0.0; outY = 0.0;
+	if (view == nil)
+		return kFalse;
+	// マウス: 画面 → 窓 → コンテンツ(ペーストボード)座標。
+	GSysPoint gm = Utils<IEventUtils>()->GetGlobalMouseLocation();
+	PMPoint pt((PMReal)gm.x, (PMReal)gm.y);
+	pt = view->GlobalToWindow(pt);
+	view->WindowToContentTransform(&pt);
+	outX = pt.X();
+	outY = pt.Y();
+	return kTrue;
+}
+
+bool16 KESCMFindPageUnderMouse(IDataBase* targetDB, PMReal mx, PMReal my, KESCMPageHit& out)
+{
+	out.spreadIndex = -1; out.spreadUID = kInvalidUID; out.numPages = 0;
+	out.globalPageBase = 0; out.hitPageIndex = -1; out.hitPageUID = kInvalidUID;
+	if (targetDB == nil)
+		return kFalse;
+	InterfacePtr<ISpreadList> spreadList(targetDB, targetDB->GetRootUID(), UseDefaultIID());
+	if (spreadList == nil)
+		return kFalse;
+	const int32 ns = spreadList->GetSpreadCount();
+	int32 globalIndex = 0;
+	for (int32 s = 0; s < ns; ++s)
+	{
+		const UID spreadUID = spreadList->GetNthSpreadUID(s);
+		InterfacePtr<ISpread> spread(targetDB, spreadUID, UseDefaultIID());
+		if (spread == nil)
+			continue;
+		const int32 np = spread->GetNumPages();
+		// マウスがこのスプレッドのいずれかのページ上にあるか?(最初に当たったページを採用)
+		for (int32 p = 0; p < np; ++p)
+		{
+			const UID pageUID = spread->GetNthPageUID(p);
+			InterfacePtr<IGeometry> geo(targetDB, pageUID, UseDefaultIID());
+			if (geo == nil)
+				continue;
+			PMRect bb = geo->GetPathBoundingBox();
+			PMMatrix m = ::InnerToPasteboardMatrix(geo);
+			m.Transform(&bb);
+			PMReal L = bb.Left(), R = bb.Right(), T = bb.Top(), B = bb.Bottom();
+			if (L > R) { PMReal t = L; L = R; R = t; }
+			if (T > B) { PMReal t = T; T = B; B = t; }
+			if (mx >= L && mx <= R && my >= T && my <= B)
+			{
+				out.spreadIndex    = s;
+				out.spreadUID      = spreadUID;
+				out.numPages       = np;
+				out.globalPageBase = globalIndex;
+				out.hitPageIndex   = p;
+				out.hitPageUID     = pageUID;
+				return kTrue;
+			}
+		}
+		globalIndex += np;
+	}
+	return kFalse;
+}
+
+//========================================================================================
+// 共有コア操作(KESCMCore.h で宣言)。
 //
-// These are the bodies that used to live inline in the scripting methods below. They are now
-// plain (non-static) functions so the panel widget observer (KESCMPanelObserver.cpp) can drive
-// the exact same behavior. They run in this translation unit on purpose: that gives them direct
-// access to the overlay engine (KESCMDrawEventHandler) and the file-local peek state (sPeek*).
+// 以前はスクリプトメソッド内にインラインで書かれていた本体。今はパネルのウィジェットオブザーバ
+// (KESCMPanelObserver.cpp)が完全に同じ挙動を駆動できるよう、ただの(非 static)関数にしてある。
+// この翻訳単位に置くのは意図的で、描画エンジン(KESCMDrawEventHandler)と file-local な peek 状態
+// (sPeek*)へ直接アクセスできるようにするため。
 //========================================================================================
 
 ErrorCode KESCMDoMarkChangesDoc(IDataBase* targetDB, IDataBase* sourceDB, PMString& outReport)

@@ -10,7 +10,7 @@
 
 #include "VCPlugInHeaders.h"
 
-// Object model / 描画 / ラスタ化(エンジンが使う SDK ヘッダ):
+// オブジェクトモデル / 描画 / ラスタ化(エンジンが使う SDK ヘッダ):
 #include "PersistUtils.h"
 #include "IDataBase.h"
 #include "IGeometry.h"
@@ -50,7 +50,7 @@
 #include <vector>
 #include <string.h>
 
-// Project includes:
+// プロジェクト内インクルード:
 #include "KESCMID.h"
 #include "KESCMDrawEventHandler.h"
 
@@ -86,7 +86,7 @@ void KESCMDrawEventHandler::BuildRing(uint8* buf, int32 rb, int32 bpp, int32 wt,
 	//   内側帯として塗る」だけでよい。ある変化画素が x<radius にあれば、領域は左端から radius 以内に
 	//   到達済み=左の外側帯は必ずクリップされるので、接触判定(旧 drow[0] 等)は不要。4辺とも対称に扱う。
 
-	// ★案A: 距離変換の1パス塗り。リング = 0<dist<=radius(=「半径内に変化画素があり、かつ自身は変化画素でない」)。
+	// 距離変換の1パス塗り。リング = 0<dist<=radius(=「半径内に変化画素があり、かつ自身は変化画素でない」)。
 	// 旧版の横膨張+縦膨張(各 O(W*H) のスライディングウィンドウ)が消え、ズーム段ごとの仕事が約1/3。
 	// チェスボード距離ゆえ角型リングで形状は従来と同一。
 	for (int32 y = 0; y < ht; ++y)
@@ -205,7 +205,7 @@ static int32 KESCMCountComponents(const uint8* mask, int32 wt, int32 ht)
 
 
 //========================================================================================
-// ヘルパ: 差分マスク(0/1)のチェスボード距離変換 → out(uint8, 0=変化画素, clamp255)。★案A。
+// ヘルパ: 差分マスク(0/1)のチェスボード距離変換 → out(uint8, 0=変化画素, clamp255)。
 //   各画素に「最も近い変化画素までのチェスボード距離(=max(|dx|,|dy|))」を入れる。リング描画は
 //   out の閾値処理(0<out<=radius)だけで済む。8近傍・全コスト1の二パス chamfer(前進+後退)。
 //   out は呼び出し側が確保(w*h)。
@@ -261,7 +261,7 @@ ErrorCode KESCMDrawEventHandler::MakeEntry(const UIDRef& targetRef, const UIDRef
 	if (sourceRef.GetDataBase() == nil || sourceRef.GetUID() == kInvalidUID)
 		return kFailure;
 
-	// ★案1(ラスタ化 3→2): 旧版は別途 72dpi の target(snapL)もラスタ化していたが、その画素は
+	// ラスタ化は3回から2回へ削減。旧版は別途 72dpi の target(snapL)もラスタ化していたが、その画素は
 	//   BuildRing が buf を全上書きするため一切使われていなかった。低解像度の寸法は高解像度から割り戻し、
 	//   背景の「赤っぽい」判定(bgRed)も高解像度 target をプーリングして作るので、snapL は不要=削除。
 	// 【高解像度】差分検出用。target / source を高dpi(kKESCMResolution×kKESCMHiResMul)でラスタ化。
@@ -317,7 +317,7 @@ ErrorCode KESCMDrawEventHandler::MakeEntry(const UIDRef& targetRef, const UIDRef
 				// 【高解像度で比較 → 低解像度セルへ散らす(scatter)】
 				// 高解像度の各画素を差分判定(生の各チャンネル最大差>しきい値)し、変化していたら
 				// 対応する低解像度セルのカウンタを増やす。セル写像は寸法比(高/低が整数倍でなくてもよい)。
-				// RGB: 先頭アルファを飛ばして3ch(offset=bppH-3)。CMYK: 先頭から4ch(offset=0, しきい値=kKESCMCmykThr)。
+				// CMYK 比較: 先頭から4ch(offset=0)。各chの最大差がしきい値(kKESCMCmykThr)を超えたら変化画素。
 				const int  nch       = 4;
 				const int32 colorOffH = 0;
 				const int  thr        = kKESCMCmykThr;
@@ -367,7 +367,7 @@ ErrorCode KESCMDrawEventHandler::MakeEntry(const UIDRef& targetRef, const UIDRef
 				else
 				{
 					// 背景(対象ページ)の「赤っぽい」画素マップを、高解像度 target をプーリングして作る
-					// (案1: 低解像度 snapL を廃止。低解像度セル中心の高解像度画素1点を代表サンプルに)。
+					// (低解像度 snapL を廃止。低解像度セル中心の高解像度画素1点を代表サンプルに)。
 					// CMYK 経路は RGB が無いので、サンプル CMYK を近似 RGB に変換してから同じ R 優位判定を使う。
 					const int32 colorOffT = 0;
 					uint8* BG = new uint8[N];
@@ -415,7 +415,7 @@ ErrorCode KESCMDrawEventHandler::MakeEntry(const UIDRef& targetRef, const UIDRef
 							e->changeCount = KESCMCountComponents(M, wl, hl);	// 確保失敗時は生 M
 						}
 					}
-					// ★案A: mask M から距離変換 dist を1回だけ作って保持(以後の BuildRing はこれ1つで描ける)。
+					// mask M から距離変換 dist を1回だけ作って保持(以後の BuildRing はこれ1つで描ける)。
 					//   dist 生成後、mask M はもう不要なので解放(常駐メモリは dist が mask を置換=純増ゼロ)。
 					e->dist = new uint8[N];
 					if (e->dist != nil)
@@ -462,7 +462,7 @@ ErrorCode KESCMDrawEventHandler::MakeEntry(const UIDRef& targetRef, const UIDRef
 		}
 	}
 
-	// 後始末: 2つのスナップショット/アクセサを破棄(案1でラスタ化は2回=低解像度 snapL は廃止)。
+	// 後始末: 2つのスナップショット/アクセサを破棄(ラスタ化は2回=低解像度 snapL は廃止)。
 	if (accSH)  delete accSH;
 	if (snapSH) delete snapSH;
 	if (accTH)  delete accTH;
@@ -502,7 +502,7 @@ ErrorCode KESCMDrawEventHandler::MakeOrigImage(const UIDRef& targetRef, const UI
 			o->buf = new uint8[(size_t)rb * h];
 			memcpy(o->buf, p, (size_t)rb * h);
 			// 不透明保証: ARGB(alpha 先頭)なら alpha を 255 に揃える(べた載せ=下が透けない)。
-			// ★案D: まず格子状(約8×8点)にサンプリングし、全サンプルが既に 255(不透明)なら O(W*H) の
+			// まず格子状(約8×8点)にサンプリングし、全サンプルが既に 255(不透明)なら O(W*H) の
 			//   全画素ループを丸ごと省く。ラスタが既に不透明(addTransparencyAlpha=kFalse)なら書き込みを回避。
 			//   サンプルに非255が1つでもあれば従来どおり全画素を 255 に揃える(自己補正=どちらでも正しい)。
 			if (bpp >= 4)
@@ -948,7 +948,7 @@ bool16 KESCMDrawEventHandler::HandleDrawEvent(ClassID eventID, void* eventData)
 			{ peekingThisSpread = kTrue; break; }
 	}
 
-	// (A2) 旧版べた載せ — マーク(sEntries)とは独立。覗き中のスプレッドの各ページに旧版画像を不透明で
+	// 旧版べた載せ — マーク(sEntries)とは独立。覗き中のスプレッドの各ページに旧版画像を不透明で
 	// ページ矩形いっぱいに blit する。
 	if (peekingThisSpread)
 	{
@@ -976,7 +976,7 @@ bool16 KESCMDrawEventHandler::HandleDrawEvent(ClassID eventID, void* eventData)
 		}
 	}
 
-	// (A3) トースト — スプレッド/ペーストボード帯の「前面」に出すため per-spread(spread座標)ポートでも描く。
+	// トースト — スプレッド/ペーストボード帯の「前面」に出すため per-spread(spread座標)ポートでも描く。
 	// このポートは帯にクリップされる(帯外は欠ける)ので、帯外=カンバスは kAfterLastSpreadDrawMessage 側が担う。
 	// window 中心(centerPb=pasteboard座標)をこのスプレッドのオフセット分だけ引いて spread 座標の中心へ変換する。
 	// per-spread は可視スプレッドごとに発火するので、箱が複数スプレッドにまたがっても各帯で前面に出る。
@@ -987,7 +987,7 @@ bool16 KESCMDrawEventHandler::HandleDrawEvent(ClassID eventID, void* eventData)
 		KESCMDrawToast(gPort, sxr, cS);
 	}
 
-	// (B) 変更オーバーレイ(リング＋変更数) — マーク済みドキュメントが現スプレッドの db と一致する時だけ。
+	// 変更オーバーレイ(リング＋変更数) — マーク済みドキュメントが現スプレッドの db と一致する時だけ。
 	// master 表示トグル(sMarksVisible)が OFF の間、またはこのスプレッドを覗き中(旧版べた載せ中)は描かない
 	// (データは保持=再表示で即復帰)。覗いていない他のスプレッドのマークは通常どおり残る。
 	// ★印刷マーク(sPrintMarks)が ON の間は、ミドル押下に関係なく常に描く(画面=WYSIWYG / 印刷・PDF にも出る)。
@@ -1038,7 +1038,7 @@ bool16 KESCMDrawEventHandler::HandleDrawEvent(ClassID eventID, void* eventData)
 				int32 R = ::ToInt32(::Round(kKESCMRingTargetPx / denom));
 				if (R < 2) R = 2;									// 最小2px(量子化後は最小4px)
 				if (R > 200) R = 200;								// 過大膨張の上限
-				// ★案B: 量子化を 2px→4px 刻みに。ズーム中に R が変わる回数(=BuildRing 再計算)がほぼ半減。
+				// 量子化を 2px→4px 刻みに。ズーム中に R が変わる回数(=BuildRing 再計算)がほぼ半減。
 				// 代償=太さの段階がやや粗い。最小は 4、200 は 200 に丸まる。
 				R = ((R + 2) / 4) * 4;								// 4px 量子化
 				if (R != e->lastRadius)

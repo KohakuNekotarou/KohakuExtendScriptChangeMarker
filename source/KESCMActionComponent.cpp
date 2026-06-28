@@ -1,22 +1,22 @@
-//========================================================================================
+﻿//========================================================================================
 //
 //  KESCMActionComponent.cpp
 //
-//  Handles the plug-in's menu actions: the "About Plug-ins" entry and the panel flyout's
-//  "About this plug-in" entry. Modeled on the BasicPanel sample (BscPnlActionComponent.cpp).
+//  プラグインのメニューアクションを処理する: 「プラグインについて」エントリと、パネルのフライアウトの
+//  「このプラグインについて」エントリ。BasicPanel サンプル(BscPnlActionComponent.cpp)を手本にしている。
 //
 //========================================================================================
 
 #include "VCPlugInHeaders.h"
 
-// General includes:
+// 一般:
 #include "CActionComponent.h"
 #include "CAlert.h"
 
-// Project includes:
+// プロジェクト内:
 #include "KESCMID.h"
 
-/** Implements IActionComponent for the ChangeMarker plug-in's menu items.
+/** ChangeMarker プラグインのメニュー項目に対する IActionComponent の実装。
 */
 class KESCMActionComponent : public CActionComponent
 {
@@ -62,4 +62,4 @@ void KESCMActionComponent::DoAbout()
 	);
 }
 
-// End, KESCMActionComponent.cpp.
+// KESCMActionComponent.cpp 終わり。

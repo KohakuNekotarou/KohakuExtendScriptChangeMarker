@@ -12,9 +12,6 @@
 #include "IDataBase.h"
 #include "IControlView.h"
 #include "ILayoutUIUtils.h"
-#include "IEventUtils.h"
-#include "ISpread.h"
-#include "ISpreadList.h"
 #include "IGeometry.h"
 #include "IShape.h"
 #include "TransformUtils.h"
@@ -101,90 +98,58 @@ bool16 KESCMSampleCmykUnderMouse(IDataBase* targetDB, IDataBase* sourceDB, PMStr
 		return kFalse;
 
 	InterfacePtr<IControlView> view(Utils<ILayoutUIUtils>()->QueryFrontView());
-	if (view == nil)
+	PMReal mx = 0.0, my = 0.0;
+	if (!KESCMQueryMouseContentPoint(view, mx, my))
 		return kFalse;
 
-	// マウス: 画面 → 窓 → コンテンツ(ペーストボード)座標。
-	GSysPoint gm = Utils<IEventUtils>()->GetGlobalMouseLocation();
-	PMPoint pt((PMReal)gm.x, (PMReal)gm.y);
-	pt = view->GlobalToWindow(pt);
-	view->WindowToContentTransform(&pt);
-	const PMReal mx = pt.X(), my = pt.Y();
+	// マウス下のページを特定(平坦通し番号も取得)。共有ヘルパ KESCMFindPageUnderMouse に集約。
+	KESCMPageHit hit;
+	if (!KESCMFindPageUnderMouse(targetDB, mx, my, hit))
+		return kFalse;
 
-	// 旧ドキュメントの平坦ページUID列(スプレッド順・ページ順)。新→旧の通し番号対応に使う。
+	// 新→旧ページ対応(平坦通し番号)。
 	std::vector<UID> sPages;
 	KESCMCollectPageUIDs(sourceDB, sPages);
-
-	InterfacePtr<ISpreadList> spreadList(targetDB, targetDB->GetRootUID(), UseDefaultIID());
-	if (spreadList == nil)
+	const int32 gi = hit.globalPageBase + hit.hitPageIndex;
+	if (gi >= (int32)sPages.size())
 		return kFalse;
 
-	const int32 ns = spreadList->GetSpreadCount();
-	int32 globalIndex = 0;
-	for (int32 s = 0; s < ns; ++s)
-	{
-		InterfacePtr<ISpread> tSpread(targetDB, spreadList->GetNthSpreadUID(s), UseDefaultIID());
-		if (tSpread == nil)
-			continue;
-		const int32 np = tSpread->GetNumPages();
+	const UID tPageUID = hit.hitPageUID;
+	const UID sPageUID = sPages[gi];
+	InterfacePtr<IGeometry> tGeo(targetDB, tPageUID, UseDefaultIID());
+	InterfacePtr<IGeometry> sGeo(sourceDB, sPageUID, UseDefaultIID());
+	if (tGeo == nil || sGeo == nil)
+		return kFalse;
 
-		for (int32 p = 0; p < np; ++p)
-		{
-			const UID tPageUID = tSpread->GetNthPageUID(p);
-			InterfacePtr<IGeometry> tGeo(targetDB, tPageUID, UseDefaultIID());
-			if (tGeo == nil)
-				continue;
-			PMRect bbPB = tGeo->GetPathBoundingBox();
-			PMMatrix mPB = ::InnerToPasteboardMatrix(tGeo);
-			mPB.Transform(&bbPB);
-			PMReal L = bbPB.Left(), R = bbPB.Right(), T = bbPB.Top(), B = bbPB.Bottom();
-			if (L > R) { PMReal t = L; L = R; R = t; }
-			if (T > B) { PMReal t = T; T = B; B = t; }
-			if (!(mx >= L && mx <= R && my >= T && my <= B))
-				continue;
+	// クリック点(pasteboard) → ページ内(inner)座標 → 新/旧それぞれの spread 座標。
+	PMMatrix mPB = ::InnerToPasteboardMatrix(tGeo);
+	if (mPB.IsSingular())
+		return kFalse;
+	PMPoint inner(mx, my);
+	mPB.Inverse().Transform(&inner);
 
-			// ヒット。新→旧ページ対応(平坦通し番号)。
-			const int32 gi = globalIndex + p;
-			if (gi >= (int32)sPages.size())
-				return kFalse;
-			const UID sPageUID = sPages[gi];
-			InterfacePtr<IGeometry> sGeo(sourceDB, sPageUID, UseDefaultIID());
-			if (sGeo == nil)
-				return kFalse;
+	PMPoint tSpreadPt(inner.X(), inner.Y());
+	::InnerToSpreadMatrix(tGeo).Transform(&tSpreadPt);
+	PMPoint sSpreadPt(inner.X(), inner.Y());
+	::InnerToSpreadMatrix(sGeo).Transform(&sSpreadPt);
 
-			// クリック点(pasteboard) → ページ内(inner)座標 → 新/旧それぞれの spread 座標。
-			if (mPB.IsSingular())
-				return kFalse;
-			PMPoint inner(mx, my);
-			PMMatrix fromPB = mPB.Inverse();
-			fromPB.Transform(&inner);
+	uint8 cN[4], cO[4];
+	const bool16 okN = KESCMReadCmykPixel(UIDRef(targetDB, tPageUID), tSpreadPt, cN);
+	const bool16 okO = KESCMReadCmykPixel(UIDRef(sourceDB, sPageUID), sSpreadPt, cO);
+	if (!okN || !okO)
+		return kFalse;
 
-			PMPoint tSpreadPt(inner.X(), inner.Y());
-			::InnerToSpreadMatrix(tGeo).Transform(&tSpreadPt);
-			PMPoint sSpreadPt(inner.X(), inner.Y());
-			::InnerToSpreadMatrix(sGeo).Transform(&sSpreadPt);
-
-			uint8 cN[4], cO[4];
-			const bool16 okN = KESCMReadCmykPixel(UIDRef(targetDB, tPageUID), tSpreadPt, cN);
-			const bool16 okO = KESCMReadCmykPixel(UIDRef(sourceDB, sPageUID), sSpreadPt, cO);
-			if (!okN || !okO)
-				return kFalse;
-
-			// ラベルは ASCII。1行目=Target(新/cN)、改行(LF)、2行目=Source(旧/cO)。各値はラスタ8bit(0..255)を
-			// 本来の CMYK 数値 0..100% に換算し、3桁ゼロ埋めで桁を縦に揃える。
-			outMsg.SetTranslatable(kFalse);
-			outMsg.Append("Target\tC"); KESCMAppend3(outMsg, KESCMByteToPct(cN[0]));	// TAB=ラベル列/値列の区切り(値の桁を固定列で縦揃え)
-			outMsg.Append(" M");       KESCMAppend3(outMsg, KESCMByteToPct(cN[1]));
-			outMsg.Append(" Y");       KESCMAppend3(outMsg, KESCMByteToPct(cN[2]));
-			outMsg.Append(" K");       KESCMAppend3(outMsg, KESCMByteToPct(cN[3]));
-			outMsg.AppendW(UTF32TextChar(0x0A));	// 改行 → 2行目へ
-			outMsg.Append("Source\tC"); KESCMAppend3(outMsg, KESCMByteToPct(cO[0]));	// TAB=ラベル列/値列の区切り(値の桁を固定列で縦揃え)
-			outMsg.Append(" M");       KESCMAppend3(outMsg, KESCMByteToPct(cO[1]));
-			outMsg.Append(" Y");       KESCMAppend3(outMsg, KESCMByteToPct(cO[2]));
-			outMsg.Append(" K");       KESCMAppend3(outMsg, KESCMByteToPct(cO[3]));
-			return kTrue;
-		}
-		globalIndex += np;
-	}
-	return kFalse;
+	// ラベルは ASCII。1行目=Target(新/cN)、改行(LF)、2行目=Source(旧/cO)。各値はラスタ8bit(0..255)を
+	// 本来の CMYK 数値 0..100% に換算し、3桁ゼロ埋めで桁を縦に揃える。
+	outMsg.SetTranslatable(kFalse);
+	outMsg.Append("Target\tC"); KESCMAppend3(outMsg, KESCMByteToPct(cN[0]));	// TAB=ラベル列/値列の区切り(値の桁を固定列で縦揃え)
+	outMsg.Append(" M");       KESCMAppend3(outMsg, KESCMByteToPct(cN[1]));
+	outMsg.Append(" Y");       KESCMAppend3(outMsg, KESCMByteToPct(cN[2]));
+	outMsg.Append(" K");       KESCMAppend3(outMsg, KESCMByteToPct(cN[3]));
+	outMsg.AppendW(UTF32TextChar(0x0A));	// 改行 → 2行目へ
+	outMsg.Append("Source\tC"); KESCMAppend3(outMsg, KESCMByteToPct(cO[0]));	// TAB=ラベル列/値列の区切り(値の桁を固定列で縦揃え)
+	outMsg.Append(" M");       KESCMAppend3(outMsg, KESCMByteToPct(cO[1]));
+	outMsg.Append(" Y");       KESCMAppend3(outMsg, KESCMByteToPct(cO[2]));
+	outMsg.Append(" K");       KESCMAppend3(outMsg, KESCMByteToPct(cO[3]));
+	return kTrue;
 }

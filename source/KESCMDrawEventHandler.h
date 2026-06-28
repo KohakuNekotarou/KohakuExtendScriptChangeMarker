@@ -28,7 +28,7 @@ struct KESCMOverlayEntry
 {
 	uint8*         buf;			// 自前の ARGB バッファ(リング画像)。所有
 	AGMImageRecord rec;			// buf を指す自前の画像レコード(blit 用)
-	uint8*         dist;		// ★案A: 差分マスクのチェスボード距離変換(w*h, uint8, 0=変化画素, clamp255)。所有。
+	uint8*         dist;		// 差分マスクのチェスボード距離変換(w*h, uint8, 0=変化画素, clamp255)。所有。
 								//   リング = 0<dist<=radius。BuildRing が膨張なしの1パスで塗れる(mask は dist 生成後は破棄)。
 	uint8*         bgRed;		// 対象ページが「赤っぽい」画素=1 のマップ(w*h)。リングの青切替に使う。所有(nil可)
 	int32          w, h;
@@ -124,7 +124,7 @@ public:
 	static PMReal sOrigScale;							// 旧版画像をラスタ化した時の content→window スケール(ズーム×デバイス倍率)。
 														// 再 peek 時にズームが変わっていたら作り直す基準。0=未設定
 	static PMReal sPeekOpacity;							// 覗き中(peek)の旧版べた載せの不透明度。Shift＋ミドル=1.0(不透明)/
-														// Ctrl＋ミドル=0.5(半透明)。(A2)描画ブロックが参照する
+														// Ctrl＋ミドル=0.5(半透明)。描画ブロックが参照する
 
 	// 一時トースト(画面=可視領域の中央に少し出て自動で消えるメッセージ)。マーク等とは完全に独立。
 	// sToastDB のドキュメントの前面ビューにだけ描く。自動消去は IIdleTask(KESCMToastIdleTask)が担う。
@@ -132,15 +132,15 @@ public:
 	static bool16     sToastVisible;	// 表示中か(タイマで kFalse に戻す)
 	static IDataBase* sToastDB;			// トーストを描くドキュメント(前面)
 
-	// 距離変換 dist を使い、buf(ARGB)へリング(0<dist<=radius)を1パスで描く(★案A=膨張不要)。
+	// 距離変換 dist を使い、buf(ARGB)へリング(0<dist<=radius)を1パスで描く(膨張不要)。
 	// 各リング画素の色は、その位置の背景が赤っぽい(bgRed[idx])なら青、そうでなければ赤。
 	// リング以外の画素は透明(alpha=0)。dist は KESCMDistTransform で事前生成(0=変化画素)。
 	static void BuildRing(uint8* buf, int32 rb, int32 bpp, int32 wt, int32 ht,
 		const uint8* dist, const uint8* bgRed, int32 radius);
 
-	// target/source を 72dpi ARGB でラスタ化→差分マスク作成。変化px数>0 のときだけ
-	// sEntries[target.UID] にエントリ登録(既存は置換)。changed に「変化したか」を返す。
-	// target/source を CMYK ラスタ化して4ch比較(しきい値 kKESCMCmykThr)。変化px数>0 のときだけエントリ登録。
+	// target/source を高解像度(kKESCMResolution×kKESCMHiResMul)で CMYK ラスタ化し、4ch を比較
+	// (しきい値 kKESCMCmykThr)。変化px数>0 のときだけ sEntries[target.UID] にエントリ登録(既存は置換)。
+	// changed に「変化したか」を返す。
 	static ErrorCode MakeEntry(const UIDRef& targetRef, const UIDRef& sourceRef, bool16& changed);
 
 	// sourceRef(旧)を resolution(dpi)で1枚だけラスタ化し、不透明画像を sOrigImages[target.UID] に

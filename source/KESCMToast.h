@@ -22,4 +22,7 @@ void KESCMShowToast(IDataBase* db, const PMString& msg, uint32 ms);
 void KESCMShowHoldToast(IDataBase* db, const PMString& msg);
 void KESCMHideHoldToast();
 
+// セッション終了時にトーストタイマ本体を解放する(KESCMPeekStartup::Shutdown から呼ぶ)。
+void KESCMShutdownToast();
+
 #endif // __KESCMToast_h__

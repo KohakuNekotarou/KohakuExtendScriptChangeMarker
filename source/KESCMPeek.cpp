@@ -2,15 +2,14 @@
 //
 //  KESCMPeek.cpp
 //
-//  Middle-button peek implementation (split out of KESCMScriptProvider.cpp): peek state,
-//  the IEventWatcher that snoops middle-button + modifiers, the startup service, and the
-//  arm/disarm/state-accessor entry points declared in KESCMCore.h.
+//  ミドルボタン peek の実装(KESCMScriptProvider.cpp から分離)。peek 状態、ミドルボタン＋修飾キーを
+//  スヌープする IEventWatcher、起動サービス、KESCMCore.h で宣言した arm/disarm/状態アクセサの入口を持つ。
 //
 //========================================================================================
 
 #include "VCPlugInHeaders.h"
 
-// Object model:
+// オブジェクトモデル:
 #include "PersistUtils.h"
 #include "IDataBase.h"
 #include "IGeometry.h"
@@ -25,7 +24,7 @@
 #include "IShape.h"
 #include "ISession.h"
 
-// Event watching / tools / startup:
+// イベント監視 / ツール / 起動:
 #include "IEventWatcher.h"
 #include "IEvent.h"
 #include "IEventDispatcher.h"
@@ -37,7 +36,7 @@
 #include "LayoutUIID.h"
 #include "DocumentContextID.h"
 
-// Geometry / view:
+// ジオメトリ / ビュー:
 #include "IControlView.h"
 #include "IPanorama.h"
 #include "IWidgetParent.h"
@@ -49,13 +48,13 @@
 #include <vector>
 #include <map>
 
-// Project includes:
+// プロジェクト内インクルード:
 #include "KESCMID.h"
 #include "KESCMConstants.h"
-#include "KESCMDrawEventHandler.h"   // engine statics + KESCMQueryPanorama
+#include "KESCMDrawEventHandler.h"   // エンジンの共有 static ＋ KESCMQueryPanorama
 #include "KESCMToast.h"              // KESCMShowToast / ShowHoldToast / HideHoldToast
 #include "KESCMColorSampler.h"       // KESCMSampleCmykUnderMouse
-#include "KESCMCore.h"               // KESCMCollectPageUIDs + arm/disarm/state decls
+#include "KESCMCore.h"               // KESCMCollectPageUIDs ＋ arm/disarm/状態 宣言
 #include "KESCMPeek.h"
 
 //========================================================================================
@@ -138,117 +137,91 @@ static KESCMPeekResult KESCMPeekShowUnderMouse(IDataBase* targetDB, IDataBase* s
 	if (peekDpi < 16.0)  peekDpi = 16.0;	// 安全下限(degenerate 回避。通常は効かない)
 	if (peekDpi > 300.0) peekDpi = 300.0;	// 過大メモリ防止(300dpi A4 ≒ 35MB/頁)
 
-	// マウス: 画面 → 窓 → コンテンツ(ペーストボード)座標。
-	GSysPoint gm = Utils<IEventUtils>()->GetGlobalMouseLocation();
-	PMPoint pt((PMReal)gm.x, (PMReal)gm.y);
-	pt = view->GlobalToWindow(pt);
-	view->WindowToContentTransform(&pt);
-	const PMReal mx = pt.X(), my = pt.Y();
+	PMReal mx = 0.0, my = 0.0;
+	if (!KESCMQueryMouseContentPoint(view, mx, my))
+		return kKESCMPeekNoView;
+
+	// マウス下のスプレッド/ページを特定(平坦通し番号も取得)。共有ヘルパ KESCMFindPageUnderMouse に集約。
+	KESCMPageHit hit;
+	if (!KESCMFindPageUnderMouse(targetDB, mx, my, hit))
+		return kKESCMPeekNoSpread;
 
 	// 旧ドキュメントの平坦ページUID列(スプレッド順・ページ順)。新→旧の通し番号対応に使う。
 	std::vector<UID> sPages;
 	KESCMCollectPageUIDs(sourceDB, sPages);
 
-	InterfacePtr<ISpreadList> spreadList(targetDB, targetDB->GetRootUID(), UseDefaultIID());
-	if (spreadList == nil)
+	const int32 s           = hit.spreadIndex;
+	const int32 np          = hit.numPages;
+	const int32 globalIndex = hit.globalPageBase;
+	InterfacePtr<ISpread> spread(targetDB, hit.spreadUID, UseDefaultIID());
+	if (spread == nil)
 		return kKESCMPeekNoSpread;
 
-	const int32 ns = spreadList->GetSpreadCount();
-	int32 globalIndex = 0;
-	for (int32 s = 0; s < ns; ++s)
+	// 【未更新スプレッドの早期スキップ】このドキュメントで比較が実行済み(sDB==targetDB)で、かつ
+	// このスプレッドのどのページも変化エントリ(sEntries)に無いなら、旧版は現行と同一=重ねる意味が
+	// 無い。重いラスタ化を丸ごと省いて即 return する(旧版を出さない)。比較が未実行(sDB!=targetDB)
+	// なら変化の有無を判定できないので、従来どおりラスタ化する(全スキップしない)。
+	if (KESCMDrawEventHandler::sDB == targetDB)
 	{
-		InterfacePtr<ISpread> spread(targetDB, spreadList->GetNthSpreadUID(s), UseDefaultIID());
-		if (spread == nil)
-			continue;
-		const int32 np = spread->GetNumPages();
+		bool16 anyChanged = kFalse;
+		for (int32 p = 0; p < np; ++p)
+			if (KESCMDrawEventHandler::sEntries.find(spread->GetNthPageUID(p)) !=
+			    KESCMDrawEventHandler::sEntries.end())
+			{ anyChanged = kTrue; break; }
+		if (!anyChanged)
+		{
+			if (outSpread) *outSpread = s;
+			if (outPages)  *outPages = 0;
+			return kKESCMPeekNoChange;
+		}
+	}
 
-		// マウスがこのスプレッドのいずれかのページ上にあるか?
-		bool16 inThis = kFalse;
+	// このスプレッドは既に丸ごとキャッシュ済みか?(同じ db かつ 全ページが sOrigImages にある) → 再利用(即時)。
+	bool16 cached = (KESCMDrawEventHandler::sOrigDB == targetDB);
+	for (int32 p = 0; p < np && cached; ++p)
+		if (KESCMDrawEventHandler::sOrigImages.find(spread->GetNthPageUID(p)) ==
+		    KESCMDrawEventHandler::sOrigImages.end())
+			cached = kFalse;
+	// ズームが変わっていたら(キャッシュ時と解像度が合わない)作り直す。差が2%以内なら再利用。
+	if (cached && KESCMDrawEventHandler::sOrigScale > 0)
+	{
+		PMReal d = effScale - KESCMDrawEventHandler::sOrigScale;
+		if (d < 0) d = -d;
+		if (d > KESCMDrawEventHandler::sOrigScale * PMReal(0.02))
+			cached = kFalse;
+	}
+
+	int32 captured = 0;
+	if (cached)
+	{
+		captured = np;	// ラスタ化不要=キャッシュがこのスプレッドを覆っている
+	}
+	else
+	{
+		KESCMDrawEventHandler::DropAllOrig();		// 覗くのは1スプレッドだけ=他は破棄
+		KESCMDrawEventHandler::sOrigDB = targetDB;
+		KESCMDrawEventHandler::sOrigScale = effScale;	// このラスタ化解像度を記録(再 peek の作り直し判定用)
 		for (int32 p = 0; p < np; ++p)
 		{
-			InterfacePtr<IGeometry> geo(targetDB, spread->GetNthPageUID(p), UseDefaultIID());
-			if (geo == nil)
-				continue;
-			PMRect bb = geo->GetPathBoundingBox();
-			PMMatrix m = ::InnerToPasteboardMatrix(geo);
-			m.Transform(&bb);
-			PMReal L = bb.Left(), R = bb.Right(), T = bb.Top(), B = bb.Bottom();
-			if (L > R) { PMReal t = L; L = R; R = t; }
-			if (T > B) { PMReal t = T; T = B; B = t; }
-			if (mx >= L && mx <= R && my >= T && my <= B) { inThis = kTrue; break; }
+			const int32 gi = globalIndex + p;
+			if (gi < (int32)sPages.size())
+			{
+				UIDRef tRef(targetDB, spread->GetNthPageUID(p));
+				UIDRef sRef(sourceDB, sPages[gi]);
+				if (KESCMDrawEventHandler::MakeOrigImage(tRef, sRef, peekDpi) == kSuccess)
+					++captured;
+			}
 		}
-
-		if (inThis)
-		{
-			// 【未更新スプレッドの早期スキップ】このドキュメントで比較が実行済み(sDB==targetDB)で、かつ
-			// このスプレッドのどのページも変化エントリ(sEntries)に無いなら、旧版は現行と同一=重ねる意味が
-			// 無い。重いラスタ化を丸ごと省いて即 return する(旧版を出さない)。比較が未実行(sDB!=targetDB)
-			// なら変化の有無を判定できないので、従来どおりラスタ化する(全スキップしない)。
-			if (KESCMDrawEventHandler::sDB == targetDB)
-			{
-				bool16 anyChanged = kFalse;
-				for (int32 p = 0; p < np; ++p)
-					if (KESCMDrawEventHandler::sEntries.find(spread->GetNthPageUID(p)) !=
-					    KESCMDrawEventHandler::sEntries.end())
-					{ anyChanged = kTrue; break; }
-				if (!anyChanged)
-				{
-					if (outSpread) *outSpread = s;
-					if (outPages)  *outPages = 0;
-					return kKESCMPeekNoChange;
-				}
-			}
-
-			// このスプレッドは既に丸ごとキャッシュ済みか?(同じ db かつ 全ページが sOrigImages にある) → 再利用(即時)。
-			bool16 cached = (KESCMDrawEventHandler::sOrigDB == targetDB);
-			for (int32 p = 0; p < np && cached; ++p)
-				if (KESCMDrawEventHandler::sOrigImages.find(spread->GetNthPageUID(p)) ==
-				    KESCMDrawEventHandler::sOrigImages.end())
-					cached = kFalse;
-			// ズームが変わっていたら(キャッシュ時と解像度が合わない)作り直す。差が2%以内なら再利用。
-			if (cached && KESCMDrawEventHandler::sOrigScale > 0)
-			{
-				PMReal d = effScale - KESCMDrawEventHandler::sOrigScale;
-				if (d < 0) d = -d;
-				if (d > KESCMDrawEventHandler::sOrigScale * PMReal(0.02))
-					cached = kFalse;
-			}
-
-			int32 captured = 0;
-			if (cached)
-			{
-				captured = np;	// ラスタ化不要=キャッシュがこのスプレッドを覆っている
-			}
-			else
-			{
-				KESCMDrawEventHandler::DropAllOrig();		// 覗くのは1スプレッドだけ=他は破棄
-				KESCMDrawEventHandler::sOrigDB = targetDB;
-				KESCMDrawEventHandler::sOrigScale = effScale;	// このラスタ化解像度を記録(再 peek の作り直し判定用)
-				for (int32 p = 0; p < np; ++p)
-				{
-					const int32 gi = globalIndex + p;
-					if (gi < (int32)sPages.size())
-					{
-						UIDRef tRef(targetDB, spread->GetNthPageUID(p));
-						UIDRef sRef(sourceDB, sPages[gi]);
-						if (KESCMDrawEventHandler::MakeOrigImage(tRef, sRef, peekDpi) == kSuccess)
-							++captured;
-					}
-				}
-			}
-			KESCMDrawEventHandler::sShowOriginal = kTrue;
-
-			InterfacePtr<IDocument> doc(targetDB, targetDB->GetRootUID(), UseDefaultIID());
-			if (doc != nil)
-				Utils<ILayoutUtils>()->InvalidateViews(doc);
-
-			if (outSpread) *outSpread = s;
-			if (outPages)  *outPages = captured;
-			return kKESCMPeekShown;
-		}
-		globalIndex += np;
 	}
-	return kKESCMPeekNoSpread;
+	KESCMDrawEventHandler::sShowOriginal = kTrue;
+
+	InterfacePtr<IDocument> doc(targetDB, targetDB->GetRootUID(), UseDefaultIID());
+	if (doc != nil)
+		Utils<ILayoutUtils>()->InvalidateViews(doc);
+
+	if (outSpread) *outSpread = s;
+	if (outPages)  *outPages = captured;
+	return kKESCMPeekShown;
 }
 
 
@@ -294,7 +267,7 @@ static void KESCMRestoreTool()
 static void KESCMBeginPeekHold(PMReal opacity)
 {
 	sPeekActive = kTrue;
-	KESCMDrawEventHandler::sPeekOpacity = opacity;	// 旧版の不透明度(描画時に (A2) ブロックが参照)
+	KESCMDrawEventHandler::sPeekOpacity = opacity;	// 旧版の不透明度(描画時に旧版べた載せの描画ブロックが参照)
 	sSingleShowing = kFalse;
 	KESCMDrawEventHandler::sMarksVisible = kFalse;	// 覗き中は枠等を出さない(旧版だけ)
 	KESCMEnterHandTool();	// 旧状態で掴んで移動
@@ -317,91 +290,60 @@ static bool16 KESCMRefreshSpreadUnderMouse(IDataBase* targetDB, IDataBase* sourc
 		return kFalse;
 
 	InterfacePtr<IControlView> view(Utils<ILayoutUIUtils>()->QueryFrontView());
-	if (view == nil)
+	PMReal mx = 0.0, my = 0.0;
+	if (!KESCMQueryMouseContentPoint(view, mx, my))
 		return kFalse;
 
-	// マウス: 画面 → 窓 → コンテンツ(ペーストボード)座標。
-	GSysPoint gm = Utils<IEventUtils>()->GetGlobalMouseLocation();
-	PMPoint pt((PMReal)gm.x, (PMReal)gm.y);
-	pt = view->GlobalToWindow(pt);
-	view->WindowToContentTransform(&pt);
-	const PMReal mx = pt.X(), my = pt.Y();
+	// マウス下のスプレッド/ページを特定(平坦通し番号も取得)。共有ヘルパ KESCMFindPageUnderMouse に集約。
+	KESCMPageHit hit;
+	if (!KESCMFindPageUnderMouse(targetDB, mx, my, hit))
+		return kFalse;
 
 	// 旧ドキュメントの平坦ページUID列(スプレッド順・ページ順)。
 	std::vector<UID> sPages;
 	KESCMCollectPageUIDs(sourceDB, sPages);
-
-	InterfacePtr<ISpreadList> spreadList(targetDB, targetDB->GetRootUID(), UseDefaultIID());
-	if (spreadList == nil)
-		return kFalse;
 
 	// マークの所属ドキュメントを合わせる(別 doc にマークがあった場合のみ総入れ替え=通常は一致で何もしない)。
 	if (KESCMDrawEventHandler::sDB != nil && KESCMDrawEventHandler::sDB != targetDB)
 		KESCMDrawEventHandler::DropAll();
 	KESCMDrawEventHandler::sDB = targetDB;
 
-	const int32 ns = spreadList->GetSpreadCount();
-	int32 globalIndex = 0;
-	for (int32 s = 0; s < ns; ++s)
+	InterfacePtr<ISpread> spread(targetDB, hit.spreadUID, UseDefaultIID());
+	if (spread == nil)
+		return kFalse;
+	const int32 np = hit.numPages;
+
+	// このスプレッドの各ページを再比較して枠を更新。新→旧は globalPageBase で対応。
+	int32 changedCount = 0;
+	for (int32 p = 0; p < np; ++p)
 	{
-		InterfacePtr<ISpread> spread(targetDB, spreadList->GetNthSpreadUID(s), UseDefaultIID());
-		if (spread == nil)
+		const int32 gi = hit.globalPageBase + p;
+		if (gi >= (int32)sPages.size())
 			continue;
-		const int32 np = spread->GetNumPages();
-
-		// マウスがこのスプレッドのいずれかのページ上にあるか?
-		bool16 inThis = kFalse;
-		for (int32 p = 0; p < np; ++p)
+		const UID tUID = spread->GetNthPageUID(p);
+		bool16 changed = kFalse;
+		KESCMDrawEventHandler::MakeEntry(UIDRef(targetDB, tUID), UIDRef(sourceDB, sPages[gi]), changed);
+		if (changed)
+			++changedCount;
+		else
 		{
-			InterfacePtr<IGeometry> geo(targetDB, spread->GetNthPageUID(p), UseDefaultIID());
-			if (geo == nil)
-				continue;
-			PMRect bb = geo->GetPathBoundingBox();
-			PMMatrix m = ::InnerToPasteboardMatrix(geo);
-			m.Transform(&bb);
-			PMReal L = bb.Left(), R = bb.Right(), T = bb.Top(), B = bb.Bottom();
-			if (L > R) { PMReal t = L; L = R; R = t; }
-			if (T > B) { PMReal t = T; T = B; B = t; }
-			if (mx >= L && mx <= R && my >= T && my <= B) { inThis = kTrue; break; }
+			// 変化が無くなったページ → 古い枠が残っていれば消す(更新で消えるべき)。
+			std::map<UID, KESCMOverlayEntry*>::iterator old = KESCMDrawEventHandler::sEntries.find(tUID);
+			if (old != KESCMDrawEventHandler::sEntries.end())
+			{ delete old->second; KESCMDrawEventHandler::sEntries.erase(old); }
 		}
-
-		if (inThis)
-		{
-			// このスプレッドの各ページを再比較して枠を更新。新→旧は globalIndex で対応。
-			int32 changedCount = 0;
-			for (int32 p = 0; p < np; ++p)
-			{
-				const int32 gi = globalIndex + p;
-				if (gi >= (int32)sPages.size())
-					continue;
-				const UID tUID = spread->GetNthPageUID(p);
-				bool16 changed = kFalse;
-				KESCMDrawEventHandler::MakeEntry(UIDRef(targetDB, tUID), UIDRef(sourceDB, sPages[gi]), changed);
-				if (changed)
-					++changedCount;
-				else
-				{
-					// 変化が無くなったページ → 古い枠が残っていれば消す(更新で消えるべき)。
-					std::map<UID, KESCMOverlayEntry*>::iterator old = KESCMDrawEventHandler::sEntries.find(tUID);
-					if (old != KESCMDrawEventHandler::sEntries.end())
-					{ delete old->second; KESCMDrawEventHandler::sEntries.erase(old); }
-				}
-			}
-
-			// 旧版画像キャッシュは古いので破棄(次の peek で現ズームで作り直し)。
-			KESCMDrawEventHandler::DropAllOrig();
-
-			InterfacePtr<IDocument> doc(targetDB, targetDB->GetRootUID(), UseDefaultIID());
-			if (doc != nil)
-				Utils<ILayoutUtils>()->InvalidateViews(doc);
-
-			if (outSpread)  *outSpread = s;
-			if (outChanged) *outChanged = changedCount;
-			return kTrue;
-		}
-		globalIndex += np;
 	}
-	return kFalse;
+
+	// 旧版画像キャッシュは古いので破棄(次の peek で現ズームで作り直し)。
+	KESCMDrawEventHandler::DropAllOrig();
+
+	InterfacePtr<IDocument> doc(targetDB, targetDB->GetRootUID(), UseDefaultIID());
+	if (doc != nil)
+		Utils<ILayoutUtils>()->InvalidateViews(doc);
+
+	if (outSpread)  *outSpread = hit.spreadIndex;
+	if (outChanged) *outChanged = changedCount;
+	return kTrue;
 }
 
 
@@ -651,11 +593,12 @@ void KESCMPeekStartup::Shutdown()
 		fWatcher->Release();
 		fWatcher = nil;
 	}
+	KESCMShutdownToast();	// トーストタイマ本体も解放(セッション中1個を保持していた)
 }
 
 //========================================================================================
-// Arm / disarm / state accessors (declared in KESCMCore.h). Kept here so they share the
-// file-local peek state above.
+// arm / disarm / 状態アクセサ(KESCMCore.h で宣言)。上の file-local な peek 状態を共有させるため、
+// ここに置いている。
 //========================================================================================
 
 void KESCMDoArmMousePeek(IDataBase* targetDB, IDataBase* sourceDB)
@@ -699,7 +642,7 @@ void KESCMDoDisarmMousePeek(IDataBase* db)
 	KESCMShowToast(db, offMsg, kKESCMToastDefaultMs);
 }
 
-// Panel state accessors (reflect the armed peek = "started" state).
+// パネルの状態アクセサ(arm 済み peek =「開始済み」状態を反映する)。
 bool16     KESCMIsArmed()        { return sPeekArmed; }
 IDataBase* KESCMArmedTargetDB()  { return sPeekTargetDB; }
 IDataBase* KESCMArmedSourceDB()  { return sPeekSourceDB; }

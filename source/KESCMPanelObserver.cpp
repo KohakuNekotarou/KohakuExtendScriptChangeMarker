@@ -2,43 +2,43 @@
 //
 //  KESCMPanelObserver.cpp
 //
-//  IObserver for the ChangeMarker control panel. It mirrors work/changemarker-panel.jsx:
-//    - Start button : resolve Target (= active doc) + Source (= the other open doc),
-//                     mark all changed pages, and arm the middle-button peek.
-//    - Clear button : clear the overlay and disarm the peek.
-//    - Print check  : toggle whether the marks print (and stay on screen) via SetPrintMarks.
-//    - 25% / Normal : print opacity, only meaningful while Print is on.
-//  The Target:/Source: labels and the ON/OFF icon reflect the armed ("started") state, which is
-//  shared application-wide (KESCMIsArmed/…), so reopening the panel keeps showing the right state.
+//  ChangeMarker 操作パネルの IObserver。work/changemarker-panel.jsx を再現する:
+//    - Start ボタン : Target(=アクティブ文書)＋ Source(=もう一方の開いている文書)を解決し、
+//                     変更ページ全部にマークを付け、ミドルボタン peek を arm する。
+//    - Clear ボタン : オーバーレイを消去し、peek を disarm する。
+//    - 印刷チェック : SetPrintMarks 経由で、マークを印刷するか(かつ画面に残すか)を切り替える。
+//    - 25% / 通常   : 印刷時の不透明度。印刷チェックが ON の間だけ意味を持つ。
+//  Target:/Source: ラベルと ON/OFF アイコンは arm 済み(「開始済み」)状態を反映する。これはアプリ全体で
+//  共有される(KESCMIsArmed/…)ので、パネルを開き直しても正しい状態が表示され続ける。
 //
-//  Modeled on the SnippetRunner panel observer (SnipRunPanelWidgetObserver.cpp).
+//  SnippetRunner のパネルオブザーバ(SnipRunPanelWidgetObserver.cpp)を手本にしている。
 //
 //========================================================================================
 
 #include "VCPlugInHeaders.h"
 
-// Interface includes:
+// インターフェイス:
 #include "IControlView.h"
 #include "IPanelControlData.h"
 #include "ISubject.h"
 #include "ITextControlData.h"
 #include "ITriStateControlData.h"
 #include "IBooleanControlData.h"
-#include "IApplication.h"			// GetExecutionContextSession, QueryApplication
+#include "IApplication.h"			// GetExecutionContextSession / QueryApplication
 #include "IActiveContext.h"
 #include "IDocument.h"
 #include "IDocumentList.h"
 
-// General includes:
+// 一般:
 #include "CObserver.h"
 #include "widgetid.h"				// kTrueStateMessage / kFalseStateMessage
 #include "PersistUtils.h"			// ::GetUIDRef
 
-// Project includes:
+// プロジェクト内:
 #include "KESCMID.h"
 #include "KESCMCore.h"
 
-/** Observes the ChangeMarker panel's widgets and drives the shared overlay operations. */
+/** ChangeMarker パネルのウィジェットを監視し、共有のオーバーレイ操作を駆動する。 */
 class KESCMPanelObserver : public CObserver
 {
 public:
@@ -62,23 +62,23 @@ private:
 	void SetStatus(const PMString& s);
 
 	bool16 IsSelected(const WidgetID& wid);
-	void   SetSelected(const WidgetID& wid, bool16 sel);	// select/deselect a checkbox or radio (no notify)
+	void   SetSelected(const WidgetID& wid, bool16 sel);	// チェックボックス/ラジオを選択・解除(通知なし)
 };
 
 CREATE_PMINTERFACE(KESCMPanelObserver, kKESCMPanelObserverImpl)
 
 //----------------------------------------------------------------------------------------
-// Local helpers
+// ローカルヘルパ
 //----------------------------------------------------------------------------------------
 
-// The active (front) document = the comparison Target.
+// アクティブ(前面)文書 = 比較の Target。
 static IDocument* KESCMActiveDoc()
 {
 	IActiveContext* ac = GetExecutionContextSession() ? GetExecutionContextSession()->GetActiveContext() : nil;
 	return ac ? ac->GetContextDocument() : nil;
 }
 
-// The first open document that is not 'target' = the comparison Source (the old version).
+// target 以外で最初に開いている文書 = 比較の Source(旧版)。
 static IDocument* KESCMFirstOtherDoc(IDocument* target)
 {
 	InterfacePtr<IApplication> app(GetExecutionContextSession() ? GetExecutionContextSession()->QueryApplication() : nil);
@@ -95,7 +95,7 @@ static IDocument* KESCMFirstOtherDoc(IDocument* target)
 	return nil;
 }
 
-// Display name for the document that owns 'db' (shortened to fit the label like the JSX panel).
+// db を所有する文書の表示名(JSX パネルと同様、ラベルに収まるよう短縮する)。
 static PMString KESCMDocNameFromDB(IDataBase* db)
 {
 	PMString name;
@@ -129,7 +129,7 @@ static PMString KESCMDocNameFromDB(IDataBase* db)
 }
 
 //----------------------------------------------------------------------------------------
-// Attach / detach
+// アタッチ / デタッチ
 //----------------------------------------------------------------------------------------
 
 void KESCMPanelObserver::AutoAttach()
@@ -194,7 +194,7 @@ IControlView* KESCMPanelObserver::FindW(const WidgetID& wid)
 }
 
 //----------------------------------------------------------------------------------------
-// Update dispatch
+// Update のディスパッチ
 //----------------------------------------------------------------------------------------
 
 void KESCMPanelObserver::Update(const ClassID& theChange, ISubject* theSubject, const PMIID& /*protocol*/, void* /*changedBy*/)
@@ -237,7 +237,7 @@ void KESCMPanelObserver::Update(const ClassID& theChange, ISubject* theSubject, 
 }
 
 //----------------------------------------------------------------------------------------
-// Actions
+// アクション
 //----------------------------------------------------------------------------------------
 
 void KESCMPanelObserver::DoStart()
@@ -312,7 +312,7 @@ void KESCMPanelObserver::ApplyPrintMarks()
 }
 
 //----------------------------------------------------------------------------------------
-// Display helpers
+// 表示ヘルパ
 //----------------------------------------------------------------------------------------
 
 void KESCMPanelObserver::UpdateOpacityEnabled()
@@ -395,4 +395,4 @@ void KESCMPanelObserver::SetSelected(const WidgetID& wid, bool16 sel)
 		ts->Deselect(kTrue /*invalidate*/, kFalse /*don't notify*/);
 }
 
-// End, KESCMPanelObserver.cpp.
+// KESCMPanelObserver.cpp 終わり。

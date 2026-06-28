@@ -159,3 +159,19 @@ void KESCMHideHoldToast()
 			Utils<ILayoutUtils>()->InvalidateViews(doc);
 	}
 }
+
+// セッション終了時にトーストタイマ本体(sToastTask)を解放する。キューに残っていれば外してから Release。
+void KESCMShutdownToast()
+{
+	if (sToastTask == nil)
+		return;
+	if (sToastQueued)
+	{
+		InterfacePtr<IIdleTaskMgr> mgr(GetExecutionContextSession(), UseDefaultIID());
+		if (mgr != nil)
+			mgr->RemoveTask(sToastTask);
+		sToastQueued = kFalse;
+	}
+	sToastTask->Release();
+	sToastTask = nil;
+}

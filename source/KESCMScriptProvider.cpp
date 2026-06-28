@@ -29,81 +29,24 @@
 
 #include "VCPlugInHeaders.h"
 
-// Interface includes:
+// スクリプトプロバイダ基盤:
 #include "IScript.h"
-#include "IScriptRequestData.h"
+#include "IScriptRequestData.h"			// ScriptData / ExtractRequestData(ScriptData.h を取り込む)
+#include "CScriptProvider.h"			// 実装基底
+#include "CPMUnknown.h"					// CREATE_PMINTERFACE
 
-// General includes:
-#include "CScriptProvider.h"
-#include "CPMUnknown.h"					// 実装基底
-#include "CServiceProvider.h"			// IK2ServiceProvider 実装基底
-
-// Object model:
+// オブジェクトモデル:
 #include "PersistUtils.h"				// ::GetUIDRef
 #include "IDataBase.h"
-#include "IGeometry.h"					// ページ bbox
-#include "IDocument.h"					// InvalidateViews に渡す IDocument
-#include "ILayoutUtils.h"				// InvalidateViews(即時再描画)
-#include "ILayoutUIUtils.h"				// QueryFrontView(マウスが乗っている前面レイアウトビュー)
-#include "IEventUtils.h"				// GetGlobalMouseLocation(現在のマウス位置)
-#include "IApplication.h"				// QueryDocumentList / app boss = IEventDispatcher
-#include "IDocumentList.h"				// FindDocByDataBase(arm 済み DB の生存確認=ダングリング回避)
-#include "ISpread.h"					// changedBy(スプレッド)→ページ列
-#include "ISpreadList.h"				// ドキュメント→全スプレッド列挙(doc単位の一括mark)
-#include "IShape.h"						// kPreviewMode / kPrinting フラグ
 
-// 描画 / Draw Event:
-#include "IDrwEvtHandler.h"				// IDrwEvtHandler / DrawEventData
-#include "IDrwEvtDispatcher.h"			// RegisterHandler / kDEHLowestPriority
-
-// ミドルボタン peek(イベント監視):
-#include "IEventWatcher.h"				// 非消費スヌープ(kMButtonDn/Up)
-#include "IEvent.h"						// IEvent::kMButtonDn / kMButtonUp / GetType
-#include "IEventDispatcher.h"			// AddEventWatcher / EventTypeList
-#include "IStartupShutdownService.h"	// 起動時に watcher を開始
-#include "CreateObject.h"				// CreateObject2<IEventWatcher> / CreateObject2<IIdleTask>
-#include "IIdleTask.h"					// 一時トーストの自動消去タイマ(RunTask で消す)
-#include "IIdleTaskMgr.h"				// AddTask / RemoveTask(タイマ登録)
-#include "IToolBoxUtils.h"				// ツール切替(ミドル押下中だけハンドツール)
-#include "ITool.h"						// ITool
-#include "LayoutUIID.h"					// kGrabberHandToolBoss / kPointerToolBoss
-#include "DocumentContextID.h"			// kEndSpreadMessage
-#include "GraphicsID.h"					// kDrawEventService
-#include "GraphicsData.h"				// GraphicsData::GetGraphicsPort / GetView / GetViewPortAttributes
-#include "IViewPortAttributes.h"		// GetAttr(kSepPrvOPPEnabledVPAttr) でオーバープリントプレビュー検出
-#include "OutPrvID.h"					// kSepPrvOPPEnabledVPAttr(オーバープリントプレビュー有効フラグ)
-#include "IGraphicsPort.h"				// image() / translate / scale
-#include "AutoGSave.h"					// 描画状態の save/restore
-#include "IControlView.h"				// GetContentToWindowMatrix(現ズーム)
-#include "IPanorama.h"					// 可視範囲の上端を content 座標で取る(拡大時の数値の縦位置追従)
-#include "IWidgetParent.h"				// QueryParentFor(子ウィジェットから親 LayoutWidget の panorama を辿る)
-#include "ISession.h"					// GetExecutionContextSession(既定フォント取得)
-#include "IFontMgr.h"					// 既定フォント取得(framelabel/TEST と同じ)
-#include "IPMFont.h"					// IPMFont(selectfont に渡す)
-#include "PMMatrix.h"
-#include "PMPoint.h"					// 回転オブジェクトの角の点を spread 座標へ変換
-#include "PMReal.h"						// ::ToInt32 / ::Round
-#include "TransformUtils.h"				// ::InnerToSpreadMatrix / ::GetDataBase
-
-// ラスタ化:
-#include "SnapshotUtilsEx.h"			// ページをオフスクリーン(ビットマップ)化
-#include "AGMImageAccessor.h"			// GetBounds() / GetBaseAddr() / GetAGMColorFamily()
-#include "GraphicsExternal.h"			// AGMImageRecord(自前で組んで blit する)
-#include "IXPUtils.h"					// 印刷用: CreateImagePaintServer / ReleasePaintServer(透明合成経由のリング描画)
-
-// STL:
-#include <map>
-#include <vector>
-#include <string.h>						// memcpy
-
-// Project includes:
-#include "KESCMScriptingDefs.h"
-#include "KESCMID.h"
-#include "KESCMCore.h"				// shared ops exposed to the panel UI (KESCMPanelObserver.cpp)
-#include "KESCMDrawEventHandler.h"	// draw engine (split out): KESCMDrawEventHandler / shared statics / constants
-#include "KESCMToast.h"				// toast show/hide (split out)
-#include "KESCMColorSampler.h"		// CMYK color sampler (split out)
-#include "KESCMPeek.h"			// middle-button peek (split out): KESCMBaseScreenOpacity
+// プロジェクト内インクルード:
+//   実処理は各分割ファイル(KESCMCore / 描画エンジン / トースト / 色サンプラ / peek)に移譲済み。
+//   ここはスクリプト引数の取り出しと委譲だけなので、必要なヘッダだけを持つ。
+#include "KESCMScriptingDefs.h"			// e_KESCM* / p_KESCM* の ID
+#include "KESCMID.h"					// boss / impl の ID
+#include "KESCMConstants.h"				// kKESCMToastDefaultMs
+#include "KESCMCore.h"					// 共有操作(KESCMDo*)。実処理はこちら
+#include "KESCMToast.h"					// KESCMShowToast
 
 
 

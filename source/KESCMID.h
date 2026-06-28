@@ -1,4 +1,4 @@
-//========================================================================================
+﻿//========================================================================================
 //  
 //  $File: $
 //  
@@ -51,11 +51,11 @@ DECLARE_PMID(kPlugInIDSpace, kKESCMPluginID, kKESCMPrefix + 0)
 // ClassIDs:
 DECLARE_PMID(kClassIDSpace, kKESCMScriptProviderBoss, kKESCMPrefix + 3)
 DECLARE_PMID(kClassIDSpace, kKESCMDrawEventServiceBoss, kKESCMPrefix + 4)
-DECLARE_PMID(kClassIDSpace, kKESCMPeekWatcherBoss, kKESCMPrefix + 5)	// IEventWatcher: middle-button peek (snoop kMButtonDn/Up)
-DECLARE_PMID(kClassIDSpace, kKESCMPeekStartupBoss, kKESCMPrefix + 6)	// IStartupShutdown: starts the peek watcher at app launch
-DECLARE_PMID(kClassIDSpace, kKESCMToastIdleTaskBoss, kKESCMPrefix + 7)	// IIdleTask: auto-dismiss the on-canvas toast message
-DECLARE_PMID(kClassIDSpace, kKESCMPanelWidgetBoss, kKESCMPrefix + 8)	// the ChangeMarker control panel (palette)
-DECLARE_PMID(kClassIDSpace, kKESCMActionComponentBoss, kKESCMPrefix + 9)	// About menu action component
+DECLARE_PMID(kClassIDSpace, kKESCMPeekWatcherBoss, kKESCMPrefix + 5)	// IEventWatcher: ミドルボタン peek(kMButtonDn/Up をスヌープ)
+DECLARE_PMID(kClassIDSpace, kKESCMPeekStartupBoss, kKESCMPrefix + 6)	// IStartupShutdown: アプリ起動時に peek ウォッチャを開始
+DECLARE_PMID(kClassIDSpace, kKESCMToastIdleTaskBoss, kKESCMPrefix + 7)	// IIdleTask: カンバス上のトーストを自動で消す
+DECLARE_PMID(kClassIDSpace, kKESCMPanelWidgetBoss, kKESCMPrefix + 8)	// ChangeMarker 操作パネル(パレット)
+DECLARE_PMID(kClassIDSpace, kKESCMActionComponentBoss, kKESCMPrefix + 9)	// About メニューのアクションコンポーネント
 //DECLARE_PMID(kClassIDSpace, kKESCMBoss, kKESCMPrefix + 6)
 //DECLARE_PMID(kClassIDSpace, kKESCMBoss, kKESCMPrefix + 8)
 //DECLARE_PMID(kClassIDSpace, kKESCMBoss, kKESCMPrefix + 9)
@@ -110,11 +110,11 @@ DECLARE_PMID(kClassIDSpace, kKESCMActionComponentBoss, kKESCMPrefix + 9)	// Abou
 DECLARE_PMID(kImplementationIDSpace, kKESCMScriptProviderImpl, kKESCMPrefix + 0)
 DECLARE_PMID(kImplementationIDSpace, kKESCMDrawEventSrvcImpl, kKESCMPrefix + 1)
 DECLARE_PMID(kImplementationIDSpace, kKESCMDrawEventHandlerImpl, kKESCMPrefix + 2)
-DECLARE_PMID(kImplementationIDSpace, kKESCMPeekWatcherImpl, kKESCMPrefix + 3)	// IEventWatcher impl (middle-button peek)
-DECLARE_PMID(kImplementationIDSpace, kKESCMPeekStartupImpl, kKESCMPrefix + 4)	// IStartupShutdown impl (starts the peek watcher)
-DECLARE_PMID(kImplementationIDSpace, kKESCMToastIdleTaskImpl, kKESCMPrefix + 5)	// IIdleTask impl (auto-dismiss toast)
-DECLARE_PMID(kImplementationIDSpace, kKESCMPanelObserverImpl, kKESCMPrefix + 6)	// IObserver impl (panel widget observer)
-DECLARE_PMID(kImplementationIDSpace, kKESCMActionComponentImpl, kKESCMPrefix + 7)	// IActionComponent impl (About)
+DECLARE_PMID(kImplementationIDSpace, kKESCMPeekWatcherImpl, kKESCMPrefix + 3)	// IEventWatcher 実装(ミドルボタン peek)
+DECLARE_PMID(kImplementationIDSpace, kKESCMPeekStartupImpl, kKESCMPrefix + 4)	// IStartupShutdown 実装(peek ウォッチャを開始)
+DECLARE_PMID(kImplementationIDSpace, kKESCMToastIdleTaskImpl, kKESCMPrefix + 5)	// IIdleTask 実装(トースト自動消去)
+DECLARE_PMID(kImplementationIDSpace, kKESCMPanelObserverImpl, kKESCMPrefix + 6)	// IObserver 実装(パネルのウィジェットオブザーバ)
+DECLARE_PMID(kImplementationIDSpace, kKESCMActionComponentImpl, kKESCMPrefix + 7)	// IActionComponent 実装(About)
 //DECLARE_PMID(kImplementationIDSpace, kKESCMImpl, kKESCMPrefix + 6)
 //DECLARE_PMID(kImplementationIDSpace, kKESCMImpl, kKESCMPrefix + 7)
 //DECLARE_PMID(kImplementationIDSpace, kKESCMImpl, kKESCMPrefix + 8)
@@ -139,8 +139,8 @@ DECLARE_PMID(kImplementationIDSpace, kKESCMActionComponentImpl, kKESCMPrefix + 7
 
 // ActionIDs:
 DECLARE_PMID(kActionIDSpace, kKESCMAboutActionID, kKESCMPrefix + 0)
-DECLARE_PMID(kActionIDSpace, kKESCMPanelWidgetActionID, kKESCMPrefix + 1)	// shows/hides the panel (Window menu)
-DECLARE_PMID(kActionIDSpace, kKESCMPopupAboutThisActionID, kKESCMPrefix + 2)	// "About this plug-in" on the panel flyout
+DECLARE_PMID(kActionIDSpace, kKESCMPanelWidgetActionID, kKESCMPrefix + 1)	// パネルの表示/非表示(ウィンドウメニュー)
+DECLARE_PMID(kActionIDSpace, kKESCMPopupAboutThisActionID, kKESCMPrefix + 2)	// パネルのフライアウトの「このプラグインについて」
 //DECLARE_PMID(kActionIDSpace, kKESCMActionID, kKESCMPrefix + 5)
 //DECLARE_PMID(kActionIDSpace, kKESCMActionID, kKESCMPrefix + 6)
 //DECLARE_PMID(kActionIDSpace, kKESCMActionID, kKESCMPrefix + 7)
@@ -203,15 +203,15 @@ DECLARE_PMID(kWidgetIDSpace, kKESCMStatusTextWidgetID, kKESCMPrefix + 36)
 //DECLARE_PMID(kWidgetIDSpace, kKESCMWidgetID, kKESCMPrefix + 24)
 //DECLARE_PMID(kWidgetIDSpace, kKESCMWidgetID, kKESCMPrefix + 25)
 
-//Script Element IDs
-// kScriptInfoIDSpace +1 is now free (kescmMarkChanges per-page removed; use kescmMarkChangesDoc)
+// スクリプト要素 ID
+// kScriptInfoIDSpace +1 は現在空き(ページ単位 kescmMarkChanges は廃止; kescmMarkChangesDoc を使う)
 DECLARE_PMID(kScriptInfoIDSpace, kKESCMClearMarksMethodScriptElement, kKESCMPrefix + 2)
 DECLARE_PMID(kScriptInfoIDSpace, kKESCMMarkChangesDocMethodScriptElement, kKESCMPrefix + 3)
-// kScriptInfoIDSpace +4 is now free (kescmShowPageX removed; the diagonal page X was dropped)
-// kScriptInfoIDSpace +5 is now free (kescmShowOverset removed); avoid collisions if reused
-// kScriptInfoIDSpace +6 is now free (kescmShowOriginal removed; folded into the middle-button peek)
-// kScriptInfoIDSpace +7 is now free (kescmHideOriginal removed; paired with kescmShowOriginal)
-// kScriptInfoIDSpace +8 is now free (kescmShowOriginalUnderMouse removed; use the middle-button peek)
+// kScriptInfoIDSpace +4 は現在空き(kescmShowPageX 廃止; 対角線のページ × は撤去)
+// kScriptInfoIDSpace +5 は現在空き(kescmShowOverset 廃止); 再利用時は衝突に注意
+// kScriptInfoIDSpace +6 は現在空き(kescmShowOriginal 廃止; ミドルボタン peek に統合)
+// kScriptInfoIDSpace +7 は現在空き(kescmHideOriginal 廃止; kescmShowOriginal と対)
+// kScriptInfoIDSpace +8 は現在空き(kescmShowOriginalUnderMouse 廃止; ミドルボタン peek を使う)
 DECLARE_PMID(kScriptInfoIDSpace, kKESCMArmMousePeekMethodScriptElement, kKESCMPrefix + 9)
 DECLARE_PMID(kScriptInfoIDSpace, kKESCMDisarmMousePeekMethodScriptElement, kKESCMPrefix + 10)
 DECLARE_PMID(kScriptInfoIDSpace, kKESCMToastMethodScriptElement, kKESCMPrefix + 11)
@@ -231,11 +231,11 @@ DECLARE_PMID(kScriptInfoIDSpace, kKESCMSetPrintMarksMethodScriptElement, kKESCMP
 #define kKESCMAboutBoxStringKey	kKESCMStringPrefix "kKESCMAboutBoxStringKey"
 #define kKESCMTargetMenuPath kKESCMPluginsMenuPath
 
-// Panel: internal flyout (popup) menu name + its menu path.
+// パネル: 内部フライアウト(ポップアップ)メニュー名＋そのメニューパス。
 #define kKESCMInternalPopupMenuNameKey	kKESCMStringPrefix "kKESCMInternalPopupMenuNameKey"
 #define kKESCMPopupMenuPath				kKESCMInternalPopupMenuNameKey
 
-// Panel string keys (localized via KESCM_enUS.fr / KESCM_jaJP.fr).
+// パネルの文字列キー(KESCM_enUS.fr / KESCM_jaJP.fr でローカライズ)。
 #define kKESCMPanelTitleKey		kKESCMStringPrefix "kKESCMPanelTitleKey"
 #define kKESCMStartButtonKey	kKESCMStringPrefix "kKESCMStartButtonKey"
 #define kKESCMClearButtonKey	kKESCMStringPrefix "kKESCMClearButtonKey"
@@ -244,10 +244,10 @@ DECLARE_PMID(kScriptInfoIDSpace, kKESCMSetPrintMarksMethodScriptElement, kKESCMP
 #define kKESCMOpacityNormalKey	kKESCMStringPrefix "kKESCMOpacityNormalKey"
 #define kKESCMHintKey			kKESCMStringPrefix "kKESCMHintKey"
 
-// PNG icon resources (compiled into the plug-in; no separate file ships with the .pln).
+// PNG アイコンリソース(プラグインに埋め込み; .pln とは別ファイルでは出荷しない)。
 #define kKESCMIconOnResID	1001
 #define kKESCMIconOffResID	1002
-#define kKESCMPaletteIconResID	1003	// small dock-tab icon shown when the panel is collapsed
+#define kKESCMPaletteIconResID	1003	// パネルが折りたたまれた時に出る小さいドックタブアイコン
 
 // Menu item positions:
 #define kKESCMAboutThisMenuItemPosition		11.0
