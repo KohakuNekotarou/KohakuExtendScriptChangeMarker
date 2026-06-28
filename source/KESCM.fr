@@ -206,6 +206,12 @@ resource MenuDef (kSDKDefMenuResourceID)
 		kKESCMPopupMenuPath,
 		kKESCMAboutThisMenuItemPosition,
 		kSDKDefIsNotDynamicMenuFlag,
+
+		// "About scripting" on the panel flyout (popup) menu.
+		kKESCMPopupAboutScriptActionID,
+		kKESCMPopupMenuPath,
+		kKESCMAboutScriptMenuItemPosition,
+		kSDKDefIsNotDynamicMenuFlag,
 	}
 };
 
@@ -227,6 +233,15 @@ resource ActionDef (kSDKDefActionResourceID)
 		kKESCMActionComponentBoss,
 		kKESCMPopupAboutThisActionID,
 		kSDKDefAboutThisPlugInMenuKey,
+		kOtherActionArea,
+		kNormalAction,
+		kDisableIfLowMem,
+		kInvalidInterfaceID,
+		kSDKDefInvisibleInKBSCEditorFlag,
+
+		kKESCMActionComponentBoss,
+		kKESCMPopupAboutScriptActionID,
+		kKESCMAboutScriptMenuKey,
 		kOtherActionArea,
 		kNormalAction,
 		kDisableIfLowMem,
@@ -299,67 +314,6 @@ resource VersionedScriptElementInfo(2)
 	
 	// Elements
 	{
-		// Page.kescmClearMarks() - removes the change-mark overlay shown on this page.
-		// ExtendScript:  doc1.spreads[0].pages[0].kescmClearMarks();
-		Method
-		{
-			kKESCMClearMarksMethodScriptElement,
-			e_KESCMClearMarks,
-			"kescm clear marks",
-			"Clears the change-mark overlay shown on this page.",
-			StringType,
-			"Status string",
-			{}
-		}
-
-		// Document.kescmMarkChangesDoc(sourceDoc) - compares each page of THIS document against the
-		// corresponding page (by index) of sourceDoc and marks all changed pages with the red ring.
-		// Unchanged pages get no overlay. Screen only, non-persistent.
-		// ExtendScript:  app.documents[0].kescmMarkChangesDoc(app.documents[1]);
-		Method
-		{
-			kKESCMMarkChangesDocMethodScriptElement,
-			e_KESCMMarkChangesDoc,
-			"kescm mark changes doc",
-			"Marks changed pages of this document against the given source document (screen only).",
-			StringType,
-			"Status string",
-			{
-				p_KESCMSourceDoc, "KESCM source document", "The document to compare against (page i vs page i)", ObjectType(kDocumentObjectScriptElement), kRequired,
-			}
-		}
-
-			// Document.kescmArmMousePeek(sourceDoc) - arms the middle-button "peek". After arming, holding the
-			// MIDDLE mouse button overlays the OLD version of the spread under the cursor (rasterized on the fly);
-			// releasing the button hides it. The image cache is kept for the most recently peeked spread (instant
-			// re-peek). Pass the OLD document to compare against. Screen only, non-persistent.
-			// ExtendScript:  app.documents[0].kescmArmMousePeek(app.documents[1]);
-			Method
-			{
-				kKESCMArmMousePeekMethodScriptElement,
-				e_KESCMArmMousePeek,
-				"kescm arm mouse peek",
-				"Arms the middle-button peek of the old version of the spread under the mouse (screen only).",
-				StringType,
-				"Status string",
-				{
-					p_KESCMSourceDoc, "KESCM source document", "The old document whose page images are overlaid while peeking (page i vs page i)", ObjectType(kDocumentObjectScriptElement), kRequired,
-				}
-			}
-
-			// Document.kescmDisarmMousePeek() - disarms the middle-button peek, hides any overlay and frees the
-			// cached old-version images. ExtendScript:  app.documents[0].kescmDisarmMousePeek();
-			Method
-			{
-				kKESCMDisarmMousePeekMethodScriptElement,
-				e_KESCMDisarmMousePeek,
-				"kescm disarm mouse peek",
-				"Disarms the middle-button peek and frees the cached old-version images (screen only).",
-				StringType,
-				"Status string",
-				{}
-			}
-
 			// Page/Document.kescmToast(message) - shows a brief message at the CENTER of the visible area that
 			// auto-dismisses after ~2.5s. Screen only, non-persistent.
 			// ExtendScript:  app.documents[0].kescmToast("ChangeMarker ON");
@@ -376,51 +330,14 @@ resource VersionedScriptElementInfo(2)
 				}
 			}
 
-			// Page/Document.kescmSetPrintMarks([flag]) - makes the change marks (red rings + change counts) appear when
-			// PRINTING. While ON, the marks also stay visible on screen at all times (WYSIWYG), independent of the
-			// middle-button press reveal. Pass false to make them screen-only again. The flag is optional (omit to turn
-			// printing ON). Marks data is untouched; only the print/visibility behavior changes.
-			// NOTE: File > Export > PDF does NOT dispatch the spread draw event, so marks do not appear there; to get a
-			// PDF with the marks, use File > Print to a "Print to PDF" printer (that goes through the print pipeline).
-			// ExtendScript:  app.documents[0].kescmSetPrintMarks(true);   // print the marks
-			Method
-			{
-				kKESCMSetPrintMarksMethodScriptElement,
-				e_KESCMSetPrintMarks,
-				"kescm set print marks",
-				"Makes the change marks appear when printing (and stay visible on screen while on).",
-				StringType,
-				"Status string",
-				{
-					p_KESCMPrintMarksFlag, "print", "kTrue to print the marks (default), kFalse to keep them screen-only", BoolDefaultType(kTrue), kOptional,
-					p_KESCMPrintFaintFlag, "faint", "kTrue to print the marks at ~25% opacity, kFalse (default) for normal opacity", BoolDefaultType(kFalse), kOptional,
-				}
-			}
-
-			// Connects this plug-in's methods and properties to scripting.
+			// Connects this plug-in's methods to scripting. kescmToast targets the document's
+			// layout window (centered in the visible area), so it is exposed on the Document object only.
 			Provider
 		{
 			kKESCMScriptProviderBoss,	// provider boss ID
 			{
-				Object{ kPageObjectScriptElement },
-				Method{ kKESCMClearMarksMethodScriptElement },
-				Method{ kKESCMToastMethodScriptElement },
-				Method{ kKESCMSetPrintMarksMethodScriptElement },
-			}
-		}
-
-		// Document-level: bulk mark across all pages + clear + peek/print toggles (same provider boss, Document object).
-		Provider
-		{
-			kKESCMScriptProviderBoss,
-			{
 				Object{ kDocumentObjectScriptElement },
-				Method{ kKESCMMarkChangesDocMethodScriptElement },
-				Method{ kKESCMClearMarksMethodScriptElement },
-				Method{ kKESCMArmMousePeekMethodScriptElement },
-				Method{ kKESCMDisarmMousePeekMethodScriptElement },
 				Method{ kKESCMToastMethodScriptElement },
-				Method{ kKESCMSetPrintMarksMethodScriptElement },
 			}
 		}
 	}

@@ -35,9 +35,8 @@ struct KESCMOverlayEntry
 	int32          rowBytes;	// buf の行バイト数(= rec.byteWidth)
 	int32          bpp;			// バイト/ピクセル
 	int32          lastRadius;	// 最後に描いたリング半径(px)。-1=未描画
-	int32          changeCount;	// このページの変更(枠)の数=マスクの連結成分数。テキスト表示用
 
-	KESCMOverlayEntry() : buf(nil), dist(nil), bgRed(nil), w(0), h(0), rowBytes(0), bpp(0), lastRadius(-1), changeCount(0)
+	KESCMOverlayEntry() : buf(nil), dist(nil), bgRed(nil), w(0), h(0), rowBytes(0), bpp(0), lastRadius(-1)
 	{
 		rec.baseAddr = nil; rec.decodeArray = nil;
 		rec.colorTab.numColors = 0; rec.colorTab.theColors = nil;

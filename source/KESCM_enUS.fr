@@ -36,6 +36,7 @@ resource StringTable (kSDKDefStringsResourceID + index_enUS)
                 kKESCMPluginsMenuKey,				kKESCMPluginName "[US]",
 	
                 kSDKDefAboutThisPlugInMenuKey,			kSDKDefAboutThisPlugInMenuValue_enUS,
+                kKESCMAboutScriptMenuKey,			"About Scripting...",
 
                 // ----- Command strings
 
@@ -58,7 +59,17 @@ resource StringTable (kSDKDefStringsResourceID + index_enUS)
                 	"DISCLAIMER: Provided as-is. We cannot take responsibility for any problems that may arise. Use at your own risk.\n\n"
                 	"Source: https://github.com/KohakuNekotarou/KohakuExtendScriptChangeMarker",
 
-		
+                kKESCMScriptHelpStringKey,			"KohakuChangeMarker - Scripting\n\n"
+                	"  Document.kescmToast(message)\n"
+                	"    Shows a brief message at the center of the active\n"
+                	"    document's layout window, auto-dismissing after\n"
+                	"    about 2.5 seconds. Screen only; nothing is saved\n"
+                	"    into the document. Returns a status string.\n\n"
+                	"Examples:\n"
+                	"  app.activeDocument.kescmToast('Hello');\n"
+                	"  app.documents[0].kescmToast('Done!');",
+
+
         }
 
 };

@@ -38,6 +38,11 @@ static bool16 KESCMReadCmykPixel(const UIDRef& pageRef, const PMPoint& spreadPt,
 	if (pageRef.GetDataBase() == nil || pageRef.GetUID() == kInvalidUID)
 		return kFalse;
 
+	// 下の SnapshotUtilsEx は fullRes 描画ゆえ、配置画像のフル解像度生成などを誘発して文書を dirty に
+	// する(プリントプレビューと同種)。サンプリングは「論理的に const」な操作なので、元々クリーンなら
+	// 描画後もクリーンへ戻す(元々変更済みなら何もしない=本物の変更は消さない)。SDK 標準の RAII を使う。
+	IDataBase::SaveRestoreModifiedState guard(pageRef.GetDataBase());
+
 	// クリック点まわりの極小矩形(spread 座標)。boundsToSpreadMatrix=identity(=既に spread 座標)。
 	const PMReal hp = kKESCMSampleHalfPt;
 	PMRect clip(spreadPt.X() - hp, spreadPt.Y() - hp, spreadPt.X() + hp, spreadPt.Y() + hp);

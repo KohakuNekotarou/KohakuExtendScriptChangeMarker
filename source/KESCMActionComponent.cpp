@@ -28,6 +28,7 @@ public:
 
 private:
 	void DoAbout();
+	void DoAboutScript();
 };
 
 /* Binds the C++ implementation class onto its ImplementationID. */
@@ -43,6 +44,10 @@ void KESCMActionComponent::DoAction(IActiveContext* /*ac*/, ActionID actionID, G
 			this->DoAbout();
 			break;
 
+		case kKESCMPopupAboutScriptActionID:
+			this->DoAboutScript();
+			break;
+
 		default:
 			break;
 	}
@@ -54,6 +59,20 @@ void KESCMActionComponent::DoAbout()
 	CAlert::ModalAlert
 	(
 		kKESCMAboutBoxStringKey,	// Alert string
+		kOKString,					// OK button
+		kNullString,				// No second button
+		kNullString,				// No third button
+		1,							// Set OK button to default
+		CAlert::eInformationIcon	// Information icon
+	);
+}
+
+/* DoAboutScript — パネルのフライアウト「スクリプトについて」。kescmToast の使い方を表示する。 */
+void KESCMActionComponent::DoAboutScript()
+{
+	CAlert::ModalAlert
+	(
+		kKESCMScriptHelpStringKey,	// Alert string (kescmToast usage)
 		kOKString,					// OK button
 		kNullString,				// No second button
 		kNullString,				// No third button

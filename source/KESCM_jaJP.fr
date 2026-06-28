@@ -40,6 +40,7 @@ resource StringTable (kSDKDefStringsResourceID + index_jaJP)
                 // SDKDef.h の kSDKDefAboutThisPlugInMenuValue_jaJP は Shift-JIS 定義のため、UTF-8
                 // テーブル(kResourceUTF8Encoded)では使えない。UTF-8 リテラルで同じ文言を直接記述する。
                 kSDKDefAboutThisPlugInMenuKey,			"このプラグインについて…(&U)",
+                kKESCMAboutScriptMenuKey,			"スクリプトについて…",
 
                 // ----- Command strings
 
@@ -63,6 +64,16 @@ resource StringTable (kSDKDefStringsResourceID + index_jaJP)
                 	"本プラグインは KohakuNekotarou が、Anthropic の AI Claude（Claude Code）と協働して設計・実装しました。\n\n"
                 	"【注意】どのような問題が起こっても責任を取れません。ご利用は自己責任でお願いします。\n\n"
                 	"ソース: https://github.com/KohakuNekotarou/KohakuExtendScriptChangeMarker",
+
+                kKESCMScriptHelpStringKey,			"KohakuChangeMarker — スクリプト\n\n"
+                	"  Document.kescmToast(message)\n"
+                	"    アクティブドキュメントのレイアウトウィンドウの\n"
+                	"    表示部分の中央に message を少しの間表示し、約2.5秒で\n"
+                	"    自動的に消えます。画面表示のみ・非永続です。\n"
+                	"    戻り値はステータス文字列。\n\n"
+                	"例:\n"
+                	"  app.activeDocument.kescmToast('こんにちは');\n"
+                	"  app.documents[0].kescmToast('完了！');",
 
         }
 

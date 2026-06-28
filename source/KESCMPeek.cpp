@@ -593,6 +593,9 @@ void KESCMPeekStartup::Shutdown()
 		fWatcher->Release();
 		fWatcher = nil;
 	}
+	// 保持していたマーク/旧版画像バッファを解放(終了時もきれいに片付ける)。
+	KESCMDrawEventHandler::DropAll();
+	KESCMDrawEventHandler::DropAllOrig();
 	KESCMShutdownToast();	// トーストタイマ本体も解放(セッション中1個を保持していた)
 }
 

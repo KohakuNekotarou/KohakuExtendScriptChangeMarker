@@ -18,6 +18,7 @@
 #include "ILayoutUtils.h"
 #include "ILayoutUIUtils.h"
 #include "IApplication.h"
+#include "IDocumentList.h"
 #include "ISpread.h"
 #include "ISpreadList.h"
 #include "IShape.h"
@@ -47,7 +48,6 @@
 #include "IXPUtils.h"
 
 #include <map>
-#include <vector>
 #include <string.h>
 
 // プロジェクト内インクルード:
@@ -107,9 +107,14 @@ void KESCMDrawEventHandler::BuildRing(uint8* buf, int32 rb, int32 bpp, int32 wt,
 				    y < radius            || (ht - 1 - y) < radius)
 					ring = kTrue;
 			}
-			if (ring)
+			// ★ページ内縁の枠帯: 変化の有無に関わらず、ページ端(=バッファ端)から radius 画素以内を
+			//   「外枠」として塗る。太さは変化部リングと同じ radius(=毎ズーム再算出ゆえ一定px=ズーム不変)。
+			//   色・不透明度もリング画素と同一(赤/赤背景でシアン、alpha=255。薄さは blit 側 opacity が担当)。
+			const bool16 frame = (x < radius || (wt - 1 - x) < radius ||
+			                      y < radius || (ht - 1 - y) < radius);
+			if (ring || frame)
 			{
-				// リング画素。下の実ページが赤っぽければ青、そうでなければ赤(画素単位)。
+				// リング/枠画素。下の実ページが赤っぽければシアン、そうでなければ赤(画素単位)。
 				const bool useAlt = (brow != nil && brow[x]);
 				px[0] = useAlt ? kKESCMRingAltR : kKESCMRingR;
 				px[1] = useAlt ? kKESCMRingAltG : kKESCMRingG;
@@ -119,88 +124,6 @@ void KESCMDrawEventHandler::BuildRing(uint8* buf, int32 rb, int32 bpp, int32 wt,
 			else { px[0] = 255; px[1] = 255; px[2] = 255; if (bpp >= 4) pixT[0] = 0; }	// 透明
 		}
 	}
-}
-
-
-//========================================================================================
-// ヘルパ: マスク(0/1)を半径 radius で膨張して out(0/1)へ。BuildRing と同じ分離スライディング
-//   ウィンドウ(O(W*H))。カウント用に近接変化を併合する目的。out は呼び出し側が確保(w*h)。
-//========================================================================================
-static void KESCMDilateMask(const uint8* mask, int32 wt, int32 ht, int32 radius, uint8* out)
-{
-	if (mask == nil || out == nil || wt <= 0 || ht <= 0)
-		return;
-	const size_t N = (size_t)wt * ht;
-	if (radius < 1) { memcpy(out, mask, N); return; }
-	uint8* H = new uint8[N];		// 横方向膨張の中間
-	if (H == nil) { memcpy(out, mask, N); return; }
-	// 横方向膨張
-	for (int32 y = 0; y < ht; ++y)
-	{
-		const uint8* mrow = mask + (size_t)y * wt;
-		uint8* hrow = H + (size_t)y * wt;
-		int32 cnt = 0, lo = 0, hi = -1;
-		for (int32 x = 0; x < wt; ++x)
-		{
-			const int32 wantHi = (x + radius >= wt) ? wt - 1 : x + radius;
-			const int32 wantLo = (x - radius < 0) ? 0 : x - radius;
-			while (hi < wantHi) { ++hi; cnt += mrow[hi]; }
-			while (lo < wantLo) { cnt -= mrow[lo]; ++lo; }
-			hrow[x] = (cnt > 0) ? 1 : 0;
-		}
-	}
-	// 縦方向膨張(H → out)
-	for (int32 x = 0; x < wt; ++x)
-	{
-		int32 cnt = 0, lo = 0, hi = -1;
-		for (int32 y = 0; y < ht; ++y)
-		{
-			const int32 wantHi = (y + radius >= ht) ? ht - 1 : y + radius;
-			const int32 wantLo = (y - radius < 0) ? 0 : y - radius;
-			while (hi < wantHi) { ++hi; cnt += H[(size_t)hi * wt + x]; }
-			while (lo < wantLo) { cnt -= H[(size_t)lo * wt + x]; ++lo; }
-			out[(size_t)y * wt + x] = (cnt > 0) ? 1 : 0;
-		}
-	}
-	delete[] H;
-}
-
-
-//========================================================================================
-// ヘルパ: 差分マスク(0/1)の連結成分数を数える(=この頁の「変更=枠」の数)。
-//   4近傍のフラッドフィル。固定半径で膨張したマスクに対して数えるのでズームに依らず一定。
-//========================================================================================
-static int32 KESCMCountComponents(const uint8* mask, int32 wt, int32 ht)
-{
-	if (mask == nil || wt <= 0 || ht <= 0)
-		return 0;
-	const size_t N = (size_t)wt * ht;
-	std::vector<uint8> seen(N, 0);
-	std::vector<int32> stack;
-	int32 count = 0;
-	for (int32 y0 = 0; y0 < ht; ++y0)
-	{
-		for (int32 x0 = 0; x0 < wt; ++x0)
-		{
-			const size_t s0 = (size_t)y0 * wt + x0;
-			if (mask[s0] == 0 || seen[s0])
-				continue;
-			++count;
-			stack.push_back((int32)s0);
-			seen[s0] = 1;
-			while (!stack.empty())
-			{
-				const int32 idx = stack.back(); stack.pop_back();
-				const int32 x = idx % wt, y = idx / wt;
-				// 4近傍。マスク=1 かつ未訪問なら同一成分。
-				if (x > 0)      { const size_t n = idx - 1;  if (mask[n] && !seen[n]) { seen[n] = 1; stack.push_back((int32)n); } }
-				if (x < wt - 1) { const size_t n = idx + 1;  if (mask[n] && !seen[n]) { seen[n] = 1; stack.push_back((int32)n); } }
-				if (y > 0)      { const size_t n = idx - wt; if (mask[n] && !seen[n]) { seen[n] = 1; stack.push_back((int32)n); } }
-				if (y < ht - 1) { const size_t n = idx + wt; if (mask[n] && !seen[n]) { seen[n] = 1; stack.push_back((int32)n); } }
-			}
-		}
-	}
-	return count;
 }
 
 
@@ -399,22 +322,6 @@ ErrorCode KESCMDrawEventHandler::MakeEntry(const UIDRef& targetRef, const UIDRef
 					KESCMOverlayEntry* e = new KESCMOverlayEntry();
 					e->w = wl;  e->h = hl;  e->rowBytes = rbL;  e->bpp = bppL;
 					e->bgRed = BG;  e->lastRadius = kKESCMBaseRadius;
-					// この頁の変更(枠)の数。生 M をそのまま数えると、文字変更で各グリフ片が
-					// 別成分になり数が膨大になる。固定半径で膨張して近接変化を併合してから数え、
-					// 見た目の赤い塊(リング)の数に近づける。
-					{
-						uint8* Dn = new uint8[N];	// 併合用の一時マスク(1byte/px)
-						if (Dn != nil)
-						{
-							KESCMDilateMask(M, wl, hl, kKESCMCountMergeRadius, Dn);
-							e->changeCount = KESCMCountComponents(Dn, wl, hl);
-							delete[] Dn;
-						}
-						else
-						{
-							e->changeCount = KESCMCountComponents(M, wl, hl);	// 確保失敗時は生 M
-						}
-					}
 					// mask M から距離変換 dist を1回だけ作って保持(以後の BuildRing はこれ1つで描ける)。
 					//   dist 生成後、mask M はもう不要なので解放(常駐メモリは dist が mask を置換=純増ゼロ)。
 					e->dist = new uint8[N];
@@ -590,23 +497,6 @@ IPanorama* KESCMQueryPanorama(IControlView* view)
 	if (parent == nil)
 		return nil;
 	return (IPanorama*)parent->QueryParentFor(IID_IPANORAMA);
-}
-
-// 変更数テキストのサイズ倍率 M(uiZoom)。2点 (zoomLo,mulLo)(zoomHi,mulHi) を通す反比例 M = a - b/zoom。
-// b = (mulHi-mulLo)/(1/zoomLo - 1/zoomHi)、a = mulHi + b/zoomHi。範囲外は [mulLo, mulHi] にクランプ。
-// uiZoom<=0(ビュー/パノラマ不明)なら 1.0(=現状サイズ)を返す。
-static PMReal KESCMCountSizeMul(PMReal uiZoom)
-{
-	if (uiZoom <= 0.0)
-		return PMReal(1.0);
-	const PMReal invLo = PMReal(1.0) / kKESCMCountZoomLo;
-	const PMReal invHi = PMReal(1.0) / kKESCMCountZoomHi;
-	const PMReal b = (kKESCMCountMulHi - kKESCMCountMulLo) / (invLo - invHi);
-	const PMReal a = kKESCMCountMulHi + b * invHi;
-	PMReal m = a - b / uiZoom;
-	if (m < kKESCMCountMulLo) m = kKESCMCountMulLo;	// 5%未満でも 0.8倍で下げ止め
-	if (m > kKESCMCountMulHi) m = kKESCMCountMulHi;	// 100%超でも 3倍で頭打ち(青天井にしない)
-	return m;
 }
 
 // トースト用の文字列幅の概算(em 単位の合計)。SDK に「選択フォントで任意文字列を実測する」軽量 API が
@@ -902,11 +792,27 @@ bool16 KESCMDrawEventHandler::HandleDrawEvent(ClassID eventID, void* eventData)
 	if (db == nil)
 		return kFalse;
 
+	// ★保持マークのドキュメントが閉じられていたら破棄する(クローズ監視の代わり)。draw は開いている
+	//   ドキュメントについてのみ発火するので、ここで sDB/sOrigDB の生存を確認できる。閉じていれば保持
+	//   バッファを解放し、ダングリング参照(別 db がアドレス再利用した際の誤一致)とメモリ滞留を防ぐ。
+	//   マークが無い通常時(sDB==nil かつ sOrigDB==nil)は何も問い合わせない=コストゼロ。
+	if (sDB != nil || sOrigDB != nil)
+	{
+		InterfacePtr<IApplication> app(GetExecutionContextSession()->QueryApplication());
+		InterfacePtr<IDocumentList> docList(app ? app->QueryDocumentList() : nil);
+		if (docList != nil)
+		{
+			if (sDB != nil && docList->FindDocByDataBase(sDB) == nil)
+				DropAll();			// sDB=nil になる
+			if (sOrigDB != nil && docList->FindDocByDataBase(sOrigDB) == nil)
+				DropAllOrig();		// sOrigDB=nil になる
+		}
+	}
+
 	// 画面スケール(ズーム)を一度だけ取得。画面描画時のみ非nil。
 	PMReal sxr = 0.0;
-	PMReal countMul = 1.0;	// 変更数テキストのサイズ倍率(拡大率連動)。ビュー/パノラマ不明時は 1.0(=現状サイズ)
 	IControlView* zview = gd->GetView();
-	InterfacePtr<IPanorama> pano;	// 可視上端(縦位置)と UIズーム(文字倍率)の両方に使う。画面描画時のみ非nil
+	InterfacePtr<IPanorama> pano;	// 可視領域の中心(トーストの基準位置)を辿るのに使う。画面描画時のみ非nil
 	PMPoint centerPb(0.0, 0.0);		// 可視領域の中心(pasteboard 座標)。トーストの基準位置に使う
 	bool16  hasCenter = kFalse;		// 上記が有効か(panorama を辿れた=画面描画時のみ)
 	if (zview != nil)
@@ -916,29 +822,22 @@ bool16 KESCMDrawEventHandler::HandleDrawEvent(ClassID eventID, void* eventData)
 		pano.reset(KESCMQueryPanorama(zview));	// 自身→親(LayoutWidget)で IPanorama を辿る(attach=addref済みを所有)
 		if (pano != nil)
 		{
-			// UIズーム値=モニタ倍率を含まない「ユーザーに見える拡大率」(5%→0.05, 100%→1.0)。
-			// sxr(=ズーム×デバイス倍率)ではなくこちらでサイズ倍率を決める(ユーザー指定の 5%/100% に合わせる)。
-			const PMReal uiZoom = pano->GetXScaleFactor(kFalse);
-			countMul = KESCMCountSizeMul(uiZoom);
 			centerPb = pano->GetContentLocationAtFrameCenter();	// 可視中心(content=pasteboard 座標)
 			hasCenter = kTrue;
 		}
 	}
 
 	// ★印刷/PDF 時は「100% 表示の見た目」に固定する(ズーム連動を切る)。印刷ポートには view が無く
-	// sxr=0 / pano=nil になるので、実効 sxr=1.0(=100%・deviceScale 1 相当)と 100% の文字倍率を与える。
-	// これでリング太さ・数値サイズ・数値位置の各式が、画面 100% 表示時とちょうど同じ値になる(下流の
+	// sxr=0 / pano=nil になるので、実効 sxr=1.0(=100%・deviceScale 1 相当)を与える。
+	// これでリング太さの式が、画面 100% 表示時とちょうど同じ値になる(下流の
 	// ズーム適応式・フォールバック式をそのまま使い回せる)。画面描画(printing=false)は従来どおりズーム連動。
 	if (printing)
-	{
 		sxr = 1.0;
-		countMul = KESCMCountSizeMul(1.0);
-	}
 
 	// ★ウィンドウ単位イベント(全スプレッド描画後, CTM=pasteboard)= トーストの「帯外(カンバス背景)」担当。
 	// このポートはスプレッド/ペーストボードの背面に来るため、何も被さらないカンバス部分にだけ見える。
 	// スプレッド/ペーストボード帯の前面分は per-spread(kEndSpreadMessage)側で描く(下)。
-	// 枠/旧版/変更数もスプレッド単位側で描く。トーストは一時メッセージなので印刷/PDF には出さない。
+	// 枠/旧版もスプレッド単位側で描く。トーストは一時メッセージなので印刷/PDF には出さない。
 	if (eventID == ClassID(kAfterLastSpreadDrawMessage))
 	{
 		if (!printing && sToastVisible && db == sToastDB && hasCenter && sxr > 0)
@@ -948,7 +847,7 @@ bool16 KESCMDrawEventHandler::HandleDrawEvent(ClassID eventID, void* eventData)
 
 	// 今描いている「このスプレッド」を覗いている(旧版べた載せ中)か。覗きで旧版が乗るのはマウス下の1スプレッド
 	// だけ(そのページが sOrigImages にある)。覗き中のスプレッドだけ旧版をきれいに見せたいので、マーク
-	// (枠/変更数)を描かない。それ以外のスプレッドは通常どおりマークを描く。
+	// (枠)を描かない。それ以外のスプレッドは通常どおりマークを描く。
 	bool16 peekingThisSpread = kFalse;
 	if (!printing && sShowOriginal && !sOrigImages.empty() && sOrigDB != nil && db == sOrigDB)
 	{
@@ -1010,11 +909,6 @@ bool16 KESCMDrawEventHandler::HandleDrawEvent(ClassID eventID, void* eventData)
 	// 離すと印刷設定に応じた基準値(KESCMBaseScreenOpacity)へ戻る。printing 経路はここを使わない。
 	const PMReal screenMarkOp = sMarkScreenOpacity;
 
-	// 変更数テキスト用の既定フォントは、このスプレッドの全ページで共通。ページループ内で毎回
-	// 取得すると変更ページ数ぶん無駄に問い合わせるので、ループ外で1回だけ取得して使い回す。
-	InterfacePtr<IFontMgr> countFontMgr(GetExecutionContextSession(), UseDefaultIID());
-	InterfacePtr<IPMFont> countFont(countFontMgr ? countFontMgr->QueryFont(countFontMgr->GetDefaultFontName()) : nil);
-
 	// このスプレッドの各ページについて、エントリがあれば描く。
 	const int32 np = spread->GetNumPages();
 	for (int32 i = 0; i < np; ++i)
@@ -1059,8 +953,7 @@ bool16 KESCMDrawEventHandler::HandleDrawEvent(ClassID eventID, void* eventData)
 			}
 		}
 
-		// 【描画順】まず枠の画像(リング)を blit し、その上に × と枠の数を重ねる。
-		// translate/scale はこの gsave 内だけ。閉じれば spread 座標に戻るので後続の ×/数 はそのまま描ける。
+		// 枠の画像(リング)を blit する。translate/scale はこの gsave 内だけ。
 		{
 			AutoGSave ag(gPort);
 			gPort->translate(pr.Left(), pr.Top());				// ページ左上へ
@@ -1076,100 +969,6 @@ bool16 KESCMDrawEventHandler::HandleDrawEvent(ClassID eventID, void* eventData)
 				// 中や 25%設定中は screenMarkOp(≒0.25)、通常は 1.0。AutoGSave 内なので閉じれば元へ戻る。
 				gPort->setopacity(screenMarkOp, kFalse);
 				gPort->image(&e->rec, PMMatrix(), 0);			// 自前レコード(buf を指す)を blit
-			}
-		}
-
-		// この頁の変更数「N chg」を常時表示(常時・トグル無し)。リング画像の上に重ねる。
-		// 文字サイズは拡大率連動(画面px = 既定px × countMul、px→pt は /sxr)。framelabel 流: session→IFontMgr→
-		// 既定フォントを selectfont し show(数字=白ストローク縁＋赤fill＋赤ストローク(やや太字)、語=青fill のみ)。
-		{
-			AutoGSave agx(gPort);
-			if (e->changeCount > 0)
-			{
-				IPMFont* theFont = countFont;	// ループ外で取得済みの既定フォントを使い回す
-				if (theFont != nil)
-				{
-					// 画面pxサイズに拡大率連動の倍率 countMul を掛けてから px→pt(/sxr)へ。
-					const PMReal numPt  = (sxr > 0) ? (kKESCMCountTextPx * countMul / sxr) : (pr.Width() / PMReal(24));
-					const PMReal wordPt = (sxr > 0) ? (kKESCMCountWordPx * countMul / sxr) : (pr.Width() / PMReal(48));
-
-					// 数字と、その後ろの語("chg")を別サイズで描く。
-					PMString numStr;  numStr.SetTranslatable(kFalse);  numStr.AppendNumber(e->changeCount);
-					PMString wordStr; wordStr.SetTranslatable(kFalse);
-					wordStr.Append(" chg");	// 先頭空白で数字と間隔
-					const int32 numCh  = numStr.NumUTF16TextChars();
-					const int32 wordCh = wordStr.NumUTF16TextChars();
-
-					// 概算幅(≒0.5em/字)。数字+語をひとまとまりとして横中央に置く。show は baseline 左端基準。
-					const PMReal numW  = numPt  * PMReal(0.5) * PMReal(numCh);
-					const PMReal wordW = wordPt * PMReal(0.5) * PMReal(wordCh);
-					const PMReal startX = (pr.Left() + pr.Right()) / PMReal(2.0) - (numW + wordW) / PMReal(2.0);
-
-					// 【縦位置=ページ上端に固定】数字の上端をページ上端にフラッシュで揃える(スクロール追従なし)。
-					// show は baseline 基準ゆえ、概ね文字高さぶん(≒0.78em)下げて文字上端をページ上端に合わせ、
-					// さらに kKESCMCountDropPx(画面px)ぶん下へ。drop は px→spread 換算(/sxr)で一定px見えにする。
-					// 横位置は従来どおりページ横中央(startX)。数字・語の共通ベースライン。
-					const PMReal drop = (sxr > 0) ? (kKESCMCountDropPx / sxr) : (pr.Width() / PMReal(240));
-					const PMReal ty = pr.Top() + numPt * PMReal(0.78) + drop;
-
-					// 変更数テキストの不透明度: 印刷時は通常=1.0 / faint=約25%(リングと同率)。画面時は screenMarkOp
-					// (通常=1.0 / Shift+Alt薄表示中・25%設定中=約0.25)。リングと同じ実効値で揃える。
-					const PMReal textOp = printing ? (sPrintFaint ? kKESCMFaintOpacity : PMReal(1.0)) : screenMarkOp;
-					// 薄表示中(<1.0)は数字の重ね描き(赤fill＋赤太らせ)が半透明で足し合わさり濃い赤が残るため、太字化を省く。
-					const bool16 faintText = (textOp < PMReal(0.999));
-
-					// テキストの不透明度。画面=screenMarkOp / 印刷=通常1.0・faint0.25。なお印刷フラットナは
-					// text show() の setopacity を無視するため、印刷の薄表示は別途「白縁を半分＋外縁を白で削って
-					// 細く見せる」で表現している(透明化は断念済み)。ここでは画面の薄表示にだけ効く。
-					gPort->setopacity(textOp, kFalse);
-					gPort->selectfont(theFont, numPt);
-					const UTF16TextChar* numBuf = numStr.GrabUTF16Buffer(nil);
-
-					// 数字の白い縁: 先に白を太めのストロークで描いてハローを作る。印刷時は白縁を半分に細く。
-					gPort->setrgbcolor(PMReal(1.0), PMReal(1.0), PMReal(1.0));		// 白
-					gPort->setlinewidth(numPt * (printing ? kKESCMCountPrintHaloFrac : kKESCMCountHaloFrac));
-					gPort->show(startX, ty, numCh, numBuf,
-						(IGraphicsPort::TextGraphicsFlags)(IGraphicsPort::kStrokeText));
-
-					// 数字の本体: まず塗り(kFillText 単独)で中までベタ赤に。合成フラグ(kFillText|kStrokeText)だと
-					// このポートでは塗りが効かず輪郭だけ赤になるため、塗りと縁取りを2回の show に分ける。
-					gPort->setrgbcolor(kKESCMCountNumR, kKESCMCountNumG, kKESCMCountNumB);
-					gPort->show(startX, ty, numCh, numBuf,
-						(IGraphicsPort::TextGraphicsFlags)(IGraphicsPort::kFillText));
-					// 同色の細い赤ストロークで少し太らせる。輪郭中心ゆえ半分が外へ膨らみ、外側の白ハローを
-					// 僅かに侵食して赤を太く見せる(白ハローは更に外側に残る=「赤文字に白縁」)。
-					// 印刷時は太らせない(細く出したいので fill のみに留める)。
-					if (!faintText && !printing)
-					{
-						gPort->setlinewidth(numPt * kKESCMCountBodyFrac);
-						gPort->show(startX, ty, numCh, numBuf,
-							(IGraphicsPort::TextGraphicsFlags)(IGraphicsPort::kStrokeText));
-					}
-					// 印刷時のみ: 紙白(白)を細いストロークで上描きして赤fillの外縁を削り、数字を細く見せる
-					// (ストロークは輪郭中心ゆえ内側半分が赤を侵食=erode。白ハローは更に外側に残る)。白紙前提。
-					if (printing)
-					{
-						gPort->setrgbcolor(PMReal(1.0), PMReal(1.0), PMReal(1.0));	// 紙白
-						gPort->setlinewidth(numPt * kKESCMCountPrintThinFrac);
-						gPort->show(startX, ty, numCh, numBuf,
-							(IGraphicsPort::TextGraphicsFlags)(IGraphicsPort::kStrokeText));
-					}
-
-					// 語: 小さめ・細め(fill のみ=ストローク無し)・青。数字の直後・同じベースライン。
-					gPort->setrgbcolor(kKESCMMarkR, kKESCMMarkG, kKESCMMarkB);
-					gPort->selectfont(theFont, wordPt);
-					const UTF16TextChar* wordBuf = wordStr.GrabUTF16Buffer(nil);
-					gPort->show(startX + numW, ty, wordCh, wordBuf,
-						(IGraphicsPort::TextGraphicsFlags)(IGraphicsPort::kFillText));
-					// 印刷時のみ: 数字と同様に紙白を細いストロークで上描きして語の外縁を削り、半分くらい細く見せる。
-					if (printing)
-					{
-						gPort->setrgbcolor(PMReal(1.0), PMReal(1.0), PMReal(1.0));	// 紙白
-						gPort->setlinewidth(wordPt * kKESCMCountWordThinFrac);
-						gPort->show(startX + numW, ty, wordCh, wordBuf,
-							(IGraphicsPort::TextGraphicsFlags)(IGraphicsPort::kStrokeText));
-					}
-				}
 			}
 		}
 	}

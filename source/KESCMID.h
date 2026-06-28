@@ -141,6 +141,7 @@ DECLARE_PMID(kImplementationIDSpace, kKESCMActionComponentImpl, kKESCMPrefix + 7
 DECLARE_PMID(kActionIDSpace, kKESCMAboutActionID, kKESCMPrefix + 0)
 DECLARE_PMID(kActionIDSpace, kKESCMPanelWidgetActionID, kKESCMPrefix + 1)	// パネルの表示/非表示(ウィンドウメニュー)
 DECLARE_PMID(kActionIDSpace, kKESCMPopupAboutThisActionID, kKESCMPrefix + 2)	// パネルのフライアウトの「このプラグインについて」
+DECLARE_PMID(kActionIDSpace, kKESCMPopupAboutScriptActionID, kKESCMPrefix + 3)	// パネルのフライアウトの「スクリプトについて」
 //DECLARE_PMID(kActionIDSpace, kKESCMActionID, kKESCMPrefix + 5)
 //DECLARE_PMID(kActionIDSpace, kKESCMActionID, kKESCMPrefix + 6)
 //DECLARE_PMID(kActionIDSpace, kKESCMActionID, kKESCMPrefix + 7)
@@ -234,6 +235,8 @@ DECLARE_PMID(kScriptInfoIDSpace, kKESCMSetPrintMarksMethodScriptElement, kKESCMP
 
 // Other StringKeys:
 #define kKESCMAboutBoxStringKey	kKESCMStringPrefix "kKESCMAboutBoxStringKey"
+#define kKESCMAboutScriptMenuKey	kKESCMStringPrefix "kKESCMAboutScriptMenuKey"	// パネルのフライアウト「スクリプトについて」のメニュー名
+#define kKESCMScriptHelpStringKey	kKESCMStringPrefix "kKESCMScriptHelpStringKey"	// その本文(kescmToast の使い方)
 #define kKESCMTargetMenuPath kKESCMPluginsMenuPath
 
 // パネル: 内部フライアウト(ポップアップ)メニュー名＋そのメニューパス。
@@ -256,6 +259,7 @@ DECLARE_PMID(kScriptInfoIDSpace, kKESCMSetPrintMarksMethodScriptElement, kKESCMP
 
 // Menu item positions:
 #define kKESCMAboutThisMenuItemPosition		11.0
+#define kKESCMAboutScriptMenuItemPosition	12.0	// 「このプラグインについて」(11.0)の下に「スクリプトについて」
 
 
 // Initial data format version numbers
