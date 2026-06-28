@@ -186,7 +186,7 @@ ErrorCode KESCMScriptProvider::SetPrintMarks(ScriptID methodID, IScriptRequestDa
 	if (data->ExtractRequestData(p_KESCMPrintMarksFlag, arg) == kSuccess)
 		arg.GetBoolean(&flag);
 
-	bool16 faint = kFalse;	// 省略時は通常不透明度(約70%)
+	bool16 faint = kFalse;	// 省略時は通常不透明度(100%)
 	ScriptData arg2;
 	if (data->ExtractRequestData(p_KESCMPrintFaintFlag, arg2) == kSuccess)
 		arg2.GetBoolean(&faint);

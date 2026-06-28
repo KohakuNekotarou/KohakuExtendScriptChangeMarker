@@ -28,8 +28,8 @@
 #include "SDKDef.h"
 
 // Company:
-#define kKESCMCompanyKey	kSDKDefPlugInCompanyKey		// Company name used internally for menu paths and the like. Must be globally unique, only A-Z, 0-9, space and "_".
-#define kKESCMCompanyValue	kSDKDefPlugInCompanyValue	// Company name displayed externally.
+#define kKESCMCompanyKey	"KohakuNekotarou"	// Company name used internally for menu paths and the like. Must be globally unique, only A-Z, 0-9, space and "_".
+#define kKESCMCompanyValue	"KohakuNekotarou"	// Company name displayed externally.
 
 // Plug-in:
 #define kKESCMPluginName	"KohakuExtendScriptChangeMarker"			// Name of this plug-in.
@@ -224,6 +224,11 @@ DECLARE_PMID(kScriptInfoIDSpace, kKESCMSetPrintMarksMethodScriptElement, kKESCMP
 // "Plug-ins" sub-menu:
 #define kKESCMPluginsMenuKey 		kKESCMStringPrefix "kKESCMPluginsMenuKey"
 #define kKESCMPluginsMenuPath		kSDKDefPlugInsStandardMenuPath kKESCMCompanyKey kSDKDefDelimitMenuPath kKESCMPluginsMenuKey
+
+// パネルを Plug-Ins メニューへ出すためのパスと位置。
+// Plug-Ins ▸ KohakuNekotarou ▸ KohakuChangeMarker（リーフはパネル名キー）。
+#define kKESCMPanelPluginsMenuPath		kSDKDefPlugInsStandardMenuPath kKESCMCompanyKey kSDKDefDelimitMenuPath kKESCMPanelTitleKey
+#define kKESCMPanelPluginsMenuPosition	100.0	// 大きいほど下に並ぶ。
 
 // Menu item keys:
 

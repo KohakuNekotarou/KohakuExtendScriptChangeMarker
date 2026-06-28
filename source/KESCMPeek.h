@@ -13,7 +13,7 @@
 
 #include "PMReal.h"
 
-// 常時表示マークの画面上の「基準」不透明度。印刷設定から決まる(印刷ON＋faint => 約0.3、それ以外 1.0)。
+// 常時表示マークの画面上の「基準」不透明度。印刷設定から決まる(印刷ON＋faint => 約0.25、それ以外 1.0)。
 // peek を離したときの経路と KESCMDoSetPrintMarks が使う。実体は KESCMPeek.cpp。
 PMReal KESCMBaseScreenOpacity();
 

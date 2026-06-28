@@ -144,11 +144,14 @@ void KESCMPanelObserver::AutoAttach()
 	this->AttachWidget(pcd, kKESCMOpacity25RadioWidgetID,     ITriStateControlData::kDefaultIID);
 	this->AttachWidget(pcd, kKESCMOpacityNormalRadioWidgetID, ITriStateControlData::kDefaultIID);
 
-	// 初期状態を明示する。RadioButtonWidget は .fr で初期選択状態を持たず、放置すると両方が
-	// 選択状態で表示される。印刷チェックは OFF、ラジオは 25% のみ選択(通常は解除)にそろえる。
-	this->SetSelected(kKESCMPrintCheckWidgetID,         kFalse);
-	this->SetSelected(kKESCMOpacityNormalRadioWidgetID, kFalse);
-	this->SetSelected(kKESCMOpacity25RadioWidgetID,     kTrue);
+	// ウィジェットを現在の共有状態へ復元する。パネルを隠して再表示すると AutoAttach が再実行される
+	// ため、固定の既定値ではなく engine の実状態(KESCMGetPrintMarks/Faint)を読んで反映する。
+	// RadioButtonWidget は .fr で初期選択状態を持たないので、ここで必ずどちらか一方だけを選択する。
+	const bool16 printOn = KESCMGetPrintMarks();
+	const bool16 faint   = KESCMGetPrintFaint();
+	this->SetSelected(kKESCMPrintCheckWidgetID,         printOn);
+	this->SetSelected(kKESCMOpacity25RadioWidgetID,     faint);
+	this->SetSelected(kKESCMOpacityNormalRadioWidgetID, !faint);
 
 	this->UpdateOpacityEnabled();	// 初期=印刷OFF なのでラジオは無効
 	this->UpdateInfoDisplay();		// 開始済みなら Target/Source 名と ON アイコン、未開始なら名前なし+OFF

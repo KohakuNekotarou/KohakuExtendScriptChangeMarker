@@ -59,9 +59,9 @@ CREATE_PMINTERFACE(KESCMDrawEventHandler, kKESCMDrawEventHandlerImpl)
 std::map<UID, KESCMOverlayEntry*> KESCMDrawEventHandler::sEntries;
 IDataBase* KESCMDrawEventHandler::sDB = nil;
 bool16 KESCMDrawEventHandler::sMarksVisible = kFalse;	// 既定=非表示。枠等はシングルミドル押下中だけ表示(master トグル)
-PMReal KESCMDrawEventHandler::sMarkScreenOpacity = 1.0;	// 既定=不透明。ミドルのみ=30%/Shift+Alt=不透明/印刷30%中の常時表示=30%
+PMReal KESCMDrawEventHandler::sMarkScreenOpacity = 1.0;	// 既定=不透明。ミドルのみ=25%/Shift+Alt=不透明/印刷25%中の常時表示=25%
 bool16 KESCMDrawEventHandler::sPrintMarks = kFalse;	// 既定=画面のみ(印刷/PDF には出さない)
-bool16 KESCMDrawEventHandler::sPrintFaint = kFalse;	// 既定=印刷時は通常不透明度(約70%)
+bool16 KESCMDrawEventHandler::sPrintFaint = kTrue;	// 既定=印刷時は約25%(パネルの既定ラジオ「25%」と一致)。印刷OFF中は未参照
 bool16 KESCMDrawEventHandler::sRasterizing = kFalse;	// 自前ラスタ化中だけ kTrue(自己参照防止)
 std::map<UID, KESCMOrigImage*> KESCMDrawEventHandler::sOrigImages;
 IDataBase* KESCMDrawEventHandler::sOrigDB = nil;
@@ -498,8 +498,18 @@ ErrorCode KESCMDrawEventHandler::MakeOrigImage(const UIDRef& targetRef, const UI
 		if (p != nil && w > 0 && h > 0 && rb > 0 && bpp >= 3 && b.right <= 32767 && b.bottom <= 32767)
 		{
 			KESCMOrigImage* o = new KESCMOrigImage();
+			uint8* obuf = (o != nil) ? new uint8[(size_t)rb * h] : nil;
+			if (o == nil || obuf == nil)
+			{
+				// allocation failed: free any partial state and bail (same safety as MakeEntry)
+				if (obuf) delete[] obuf;
+				if (o)    delete o;
+				if (acc)  delete acc;
+				if (snap) delete snap;
+				return kFailure;
+			}
+			o->buf = obuf;
 			o->w = w;  o->h = h;  o->rowBytes = rb;  o->bpp = bpp;
-			o->buf = new uint8[(size_t)rb * h];
 			memcpy(o->buf, p, (size_t)rb * h);
 			// 不透明保証: ARGB(alpha 先頭)なら alpha を 255 に揃える(べた載せ=下が透けない)。
 			// まず格子状(約8×8点)にサンプリングし、全サンプルが既に 255(不透明)なら O(W*H) の
@@ -811,7 +821,7 @@ static void KESCMDrawRingForPrint(IGraphicsPort* gPort, KESCMOverlayEntry* e)
 		}
 	}
 
-	// リングの不透明度。通常=画面と同じ(kKESCMRingAlpha/255=1.0 不透明) / faint=約30%(kKESCMFaintOpacity)。
+	// リングの不透明度。通常=画面と同じ(kKESCMRingAlpha/255=1.0 不透明) / faint=約25%(kKESCMFaintOpacity)。
 	const PMReal op = KESCMDrawEventHandler::sPrintFaint ? kKESCMFaintOpacity : (kKESCMRingAlpha / PMReal(255.0));
 	struct PassDef { uint8* buf; uint8 r, g, b; };
 	PassDef passes[2] = { { maskR, 255, 0, 0 }, { maskB, 0, 0, 255 } };	// 赤 / 青
@@ -995,8 +1005,8 @@ bool16 KESCMDrawEventHandler::HandleDrawEvent(ClassID eventID, void* eventData)
 		return kFalse;
 
 	// 画面マークの実効不透明度。sMarkScreenOpacity は常に実効値を保持する(下の各ソースが設定):
-	//   ・既定/印刷通常 = 1.0(不透明)  ・印刷30%選択中(常時表示) = 0.3
-	//   ・ミドルのみ押下中 = 0.3        ・Shift+Alt 押下中 = 1.0(不透明=印刷30%中でも不透明で確認できる)
+	//   ・既定/印刷通常 = 1.0(不透明)  ・印刷25%選択中(常時表示) = 0.3
+	//   ・ミドルのみ押下中 = 0.25        ・Shift+Alt 押下中 = 1.0(不透明=印刷25%中でも不透明で確認できる)
 	// 離すと印刷設定に応じた基準値(KESCMBaseScreenOpacity)へ戻る。printing 経路はここを使わない。
 	const PMReal screenMarkOp = sMarkScreenOpacity;
 
@@ -1063,7 +1073,7 @@ bool16 KESCMDrawEventHandler::HandleDrawEvent(ClassID eventID, void* eventData)
 			else
 			{
 				// 画面 blit は image() の画素 alpha に加えてポート opacity も honor する。薄表示(Shift+Alt+ミドル)
-				// 中や 30%設定中は screenMarkOp(≒0.3)、通常は 1.0。AutoGSave 内なので閉じれば元へ戻る。
+				// 中や 25%設定中は screenMarkOp(≒0.25)、通常は 1.0。AutoGSave 内なので閉じれば元へ戻る。
 				gPort->setopacity(screenMarkOp, kFalse);
 				gPort->image(&e->rec, PMMatrix(), 0);			// 自前レコード(buf を指す)を blit
 			}
@@ -1102,8 +1112,8 @@ bool16 KESCMDrawEventHandler::HandleDrawEvent(ClassID eventID, void* eventData)
 					const PMReal drop = (sxr > 0) ? (kKESCMCountDropPx / sxr) : (pr.Width() / PMReal(240));
 					const PMReal ty = pr.Top() + numPt * PMReal(0.78) + drop;
 
-					// 変更数テキストの不透明度: 印刷時は通常=1.0 / faint=約30%(リングと同率)。画面時は screenMarkOp
-					// (通常=1.0 / Shift+Alt薄表示中・30%設定中=約0.3)。リングと同じ実効値で揃える。
+					// 変更数テキストの不透明度: 印刷時は通常=1.0 / faint=約25%(リングと同率)。画面時は screenMarkOp
+					// (通常=1.0 / Shift+Alt薄表示中・25%設定中=約0.25)。リングと同じ実効値で揃える。
 					const PMReal textOp = printing ? (sPrintFaint ? kKESCMFaintOpacity : PMReal(1.0)) : screenMarkOp;
 					// 薄表示中(<1.0)は数字の重ね描き(赤fill＋赤太らせ)が半透明で足し合わさり濃い赤が残るため、太字化を省く。
 					const bool16 faintText = (textOp < PMReal(0.999));

@@ -73,7 +73,7 @@ static bool16     sPeekArmed    = kFalse;
 // 押下中だけ表示し、ミドルを離すと消す(修飾キーは離してもよい)。判定はミドル押下時に1回見るだけ。
 static const PMReal kKESCMPeekSemiOpacity = 0.5;	// Ctrl＋ミドル時の旧版の不透明度(0..1)
 static bool16 sPeekActive        = kFalse;	// Shift/Ctrl+ミドルを押し込み中(=覗き表示中)か
-static bool16 sSingleShowing     = kFalse;	// 修飾なしミドル押下中(=全マークを約30%で一時表示中)か。離すと隠す＋基準opacityへ
+static bool16 sSingleShowing     = kFalse;	// 修飾なしミドル押下中(=全マークを約25%で一時表示中)か。離すと隠す＋基準opacityへ
 static bool16 sFaintShowing      = kFalse;	// Shift+Alt+ミドル押下中(=全マークを通常=不透明で一時表示中)か。離すと隠す＋基準opacityへ
 static bool16 sColorHoldShowing  = kFalse;	// Shift＋Ctrl＋Alt＋ミドル押下中(=色サンプルのトースト表示中)か。離すと消す
 // ミドル押下中だけハンドツール(掴んで移動)に一時切替。離すと元のツールへ戻す。
@@ -81,7 +81,7 @@ static ITool*  sSavedTool  = nil;	// 切替前のツール(ref を保持。Resto
 static bool16  sHandActive = kFalse;	// ハンドツールに一時切替中か
 
 // 画面マークの「基準」不透明度(=ミドル/Shift+Alt のどちらも押していない常時表示時の値)。
-//   印刷マークON＋30%(faint)選択中は 0.3(画面も印刷と同じ薄さ)、それ以外は 1.0(不透明)。
+//   印刷マークON＋25%(faint)選択中は 0.25(画面も印刷と同じ薄さ)、それ以外は 1.0(不透明)。
 //   ミドル/Shift+Alt を離したら sMarkScreenOpacity をこの値へ戻す。
 PMReal KESCMBaseScreenOpacity()
 {
@@ -444,7 +444,7 @@ IEventDispatcher::EventTypeList KESCMPeekWatcher::WatchEvent(IEvent* e)
 			if (haveContent)
 			{
 				sFaintShowing = kTrue;
-				KESCMDrawEventHandler::sMarkScreenOpacity = 1.0;				// 通常=不透明(印刷30%中でも不透明で確認できる)
+				KESCMDrawEventHandler::sMarkScreenOpacity = 1.0;				// 通常=不透明(印刷25%中でも不透明で確認できる)
 				KESCMDrawEventHandler::sMarksVisible = kTrue;					// 押下中だけ表示
 				KESCMEnterHandTool();											// 枠を見ながら掴んで移動
 				KESCMInvalidateMarksDoc();
@@ -477,14 +477,14 @@ IEventDispatcher::EventTypeList KESCMPeekWatcher::WatchEvent(IEvent* e)
 		}
 		else if (!e->ShiftKeyDown() && !e->CmdKeyDown() && !e->OptionAltKeyDown())
 		{
-			// シングル動作(修飾キーなしミドル押下中): 全マーク(リング＋変更数)を「約30%で薄表示」にして、
+			// シングル動作(修飾キーなしミドル押下中): 全マーク(リング＋変更数)を「約25%で薄表示」にして、
 			// ハンドツールに切替えて「枠を見ながら掴んで移動」できるようにする。離す(kMButtonUp)と非表示＋不透明度を戻す。
 			// マークが何も無い(エントリ無し)時は反応しない=素のミドルクリックを邪魔しない。
 			const bool16 haveContent = !KESCMDrawEventHandler::sEntries.empty();
 			if (haveContent)
 			{
 				sSingleShowing = kTrue;
-				KESCMDrawEventHandler::sMarkScreenOpacity = kKESCMFaintOpacity;	// ミドルのみ=30%薄表示
+				KESCMDrawEventHandler::sMarkScreenOpacity = kKESCMFaintOpacity;	// ミドルのみ=25%薄表示
 				KESCMDrawEventHandler::sMarksVisible = kTrue;	// 押下中だけ枠等を表示
 				KESCMEnterHandTool();	// 枠を見ながら掴んで移動
 				KESCMInvalidateMarksDoc();
@@ -518,7 +518,7 @@ IEventDispatcher::EventTypeList KESCMPeekWatcher::WatchEvent(IEvent* e)
 		}
 		else if (sSingleShowing)
 		{
-			// ミドルのみの押下を離した → 30%表示を解除し、不透明度を基準値(印刷設定に応じた値)へ戻す＋非表示へ。
+			// ミドルのみの押下を離した → 25%表示を解除し、不透明度を基準値(印刷設定に応じた値)へ戻す＋非表示へ。
 			sSingleShowing = kFalse;
 			KESCMDrawEventHandler::sMarksVisible = kFalse;
 			KESCMDrawEventHandler::sMarkScreenOpacity = KESCMBaseScreenOpacity();

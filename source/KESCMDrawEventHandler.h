@@ -102,15 +102,15 @@ public:
 	// このトグルの影響を受けない(ダブルクリックで別管理)。
 	static bool16 sMarksVisible;
 	// 画面マーク(リング＋変更数)に掛ける「実効」不透明度。★既定=1.0(不透明)。リング blit と数字 show の双方に同率。
-	//   ・ミドルのみ押下中 = kKESCMFaintOpacity(≒0.3)   ・Shift+Alt 押下中 = 1.0(不透明)
-	//   ・押していない常時表示時 = 基準値 KESCMBaseScreenOpacity()(印刷ON＋30%なら0.3 / それ以外1.0)
+	//   ・ミドルのみ押下中 = kKESCMFaintOpacity(≒0.25)   ・Shift+Alt 押下中 = 1.0(不透明)
+	//   ・押していない常時表示時 = 基準値 KESCMBaseScreenOpacity()(印刷ON＋25%なら0.25 / それ以外1.0)
 	static PMReal sMarkScreenOpacity;
 	// 変更マーク(リング＋変更数)を印刷/PDF にも出すか(kescmSetPrintMarks)。★既定=kFalse(画面のみ)。
 	// ON の間は、ミドル押下に関係なく画面でも常時表示(WYSIWYG)＋印刷/PDF にも描く。マークデータとは独立に保持。
 	static bool16 sPrintMarks;
-	// 印刷/PDF 時のマーク不透明度を薄く(約30%)するか(kescmSetPrintMarks の第2引数 faint)。★既定=kFalse(通常=不透明)。
-	// 印刷経路(リング=KESCMDrawRingForPrint / 変更数テキスト)に効くほか、印刷ON＋30%中は画面の常時表示の
-	// 基準不透明度(KESCMBaseScreenOpacity)も0.3に下げる(画面と印刷の見た目を一致)。
+	// 印刷/PDF 時のマーク不透明度を薄く(約25%)するか(kescmSetPrintMarks の第2引数 faint)。★既定=kFalse(通常=不透明)。
+	// 印刷経路(リング=KESCMDrawRingForPrint / 変更数テキスト)に効くほか、印刷ON＋25%中は画面の常時表示の
+	// 基準不透明度(KESCMBaseScreenOpacity)も0.25に下げる(画面と印刷の見た目を一致)。
 	static bool16 sPrintFaint;
 	// 自前のラスタ化(MakeEntry/MakeOrigImage の SnapshotUtilsEx::Draw)中だけ kTrue。HandleDrawEvent が
 	// 再入したらマークを描かない(自己参照防止)。kPreviewMode ビットに頼ると PDF 書き出し(同ビット)を巻き込むため。

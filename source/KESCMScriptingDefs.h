@@ -57,7 +57,7 @@ enum KESCMScriptProperties
 	// 'pKGo' (p_KESCMShowOversetFlag) は現在空き(kescmShowOverset は廃止)
 	p_KESCMToastMsg      = 'pKGt',	// p=param K=Kohaku G=KESCM t=toast text  : 画面中央に少し表示する文字列
 	p_KESCMPrintMarksFlag = 'pKGp',	// p=param K=Kohaku G=KESCM p=print flag  : kTrue でマークを印刷(既定)、kFalse で画面のみ
-	p_KESCMPrintFaintFlag = 'pKGf'	// p=param K=Kohaku G=KESCM f=faint flag  : kTrue でマークを約30%不透明度で印刷、kFalse(既定)で通常不透明度
+	p_KESCMPrintFaintFlag = 'pKGf'	// p=param K=Kohaku G=KESCM f=faint flag  : kTrue でマークを約25%不透明度で印刷、kFalse(既定)で通常不透明度
 	// 'pKGn' (p_KESCMSensitivity) は現在空き — 感度セレクタは廃止; 検出は常に CMYK 4ch の差>0
 };
 

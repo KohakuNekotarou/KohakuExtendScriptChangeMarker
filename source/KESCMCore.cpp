@@ -204,3 +204,14 @@ void KESCMDoSetPrintMarks(bool16 printFlag, bool16 faintFlag, IDataBase* db)
 			Utils<ILayoutUtils>()->InvalidateViews(doc);
 	}
 }
+
+// 現在の印刷マーク設定を返す(パネル再表示時の状態復元に使用)。
+bool16 KESCMGetPrintMarks()
+{
+	return KESCMDrawEventHandler::sPrintMarks;
+}
+
+bool16 KESCMGetPrintFaint()
+{
+	return KESCMDrawEventHandler::sPrintFaint;
+}

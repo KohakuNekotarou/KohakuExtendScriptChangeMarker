@@ -65,4 +65,8 @@ bool16		KESCMIsArmed();
 IDataBase*	KESCMArmedTargetDB();
 IDataBase*	KESCMArmedSourceDB();
 
+// 現在の印刷マーク設定。パネルを開き直したときにチェック/ラジオを実状態へ復元するために使う。
+bool16		KESCMGetPrintMarks();	// 印刷マーク ON/OFF
+bool16		KESCMGetPrintFaint();	// 印刷不透明度: kTrue=約25% / kFalse=通常
+
 #endif // __KESCMCore_h__

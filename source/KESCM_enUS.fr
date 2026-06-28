@@ -48,10 +48,15 @@ resource StringTable (kSDKDefStringsResourceID + index_enUS)
                 kKESCMPrintCheckKey,			"Print comparison marks",
                 kKESCMOpacity25Key,				"25%",
                 kKESCMOpacityNormalKey,			"Normal",
-                kKESCMHintKey,					"<Shift/Ctrl/Alt can be released>\nMiddle button =\n  30% marks (while held)\nMiddle + Shift =\n  original (while held)\nMiddle + Alt =\n  original 50% (while held)\nMiddle + Ctrl =\n  refresh spread compare\nMiddle + Shift+Alt =\n  marks (while held)\nMiddle + Shift+Ctrl+Alt =\n  color info (while held)",
+                kKESCMHintKey,					"<Shift/Ctrl/Alt can be released>\nMiddle button =\n  25% marks (while held)\nMiddle + Shift =\n  original (while held)\nMiddle + Alt =\n  original 50% (while held)\nMiddle + Ctrl =\n  refresh spread compare\nMiddle + Shift+Alt =\n  marks (while held)\nMiddle + Shift+Ctrl+Alt =\n  color info (while held)",
 
 		// ----- Misc strings
-                kKESCMAboutBoxStringKey,			kKESCMPluginName " [US], version " kKESCMVersion " by " kKESCMAuthor "\n\n" kSDKDefCopyrightStandardValue "\n\n" kSDKDefPartnersStandardValue_enUS,
+                kKESCMAboutBoxStringKey,			kKESCMPluginName ", version " kKESCMVersion "\n\n"
+                	"Adobe InDesign C++ SDK Plug-In.\n"
+                	"Renders two documents page by page off-screen, compares them pixel by pixel, and overlays red frames on screen where changes are found. The overlay is non-persistent and is never saved into the document.\n\n"
+                	"Designed and implemented by KohakuNekotarou in collaboration with Anthropic's AI Claude (Claude Code).\n\n"
+                	"DISCLAIMER: Provided as-is. We cannot take responsibility for any problems that may arise. Use at your own risk.\n\n"
+                	"Source: https://github.com/KohakuNekotarou/KohakuExtendScriptChangeMarker",
 
 		
         }

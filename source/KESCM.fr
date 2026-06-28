@@ -393,7 +393,7 @@ resource VersionedScriptElementInfo(2)
 				"Status string",
 				{
 					p_KESCMPrintMarksFlag, "print", "kTrue to print the marks (default), kFalse to keep them screen-only", BoolDefaultType(kTrue), kOptional,
-					p_KESCMPrintFaintFlag, "faint", "kTrue to print the marks at ~30% opacity, kFalse (default) for normal opacity", BoolDefaultType(kFalse), kOptional,
+					p_KESCMPrintFaintFlag, "faint", "kTrue to print the marks at ~25% opacity, kFalse (default) for normal opacity", BoolDefaultType(kFalse), kOptional,
 				}
 			}
 
@@ -466,9 +466,9 @@ resource PanelList (kSDKDefPanelResourceID)
 		kKESCMPluginID,				// owning plug-in
 		kNotResizable,				// fixed-size panel
 		kKESCMPanelWidgetActionID,	// Action ID to show/hide the panel
-		kKESCMPanelTitleKey,		// Window menu / title
-		"",							// no alternate menu path
-		0.0,						// alternate menu position
+		"",							// panelName empty: place via altMenu below for explicit menu placement
+		kKESCMPanelPluginsMenuPath,	// Plug-Ins > KohakuNekotarou > KohakuChangeMarker
+		kKESCMPanelPluginsMenuPosition,	// lower part of the menu
 		kKESCMPaletteIconResID, kKESCMPluginID,	// PNG icon for the collapsed dock tab
 		c_Panel
 	}
