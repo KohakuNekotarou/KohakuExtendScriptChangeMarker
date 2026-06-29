@@ -194,13 +194,16 @@ ErrorCode KESCMDrawEventHandler::MakeEntry(const UIDRef& targetRef, const UIDRef
 	// 表示リングは別途 ARGB で合成するので、比較ラスタは不透明(addTransparencyAlpha=kFalse)でよい。
 	SnapshotUtilsEx* snapTH = new SnapshotUtilsEx(targetRef, 1.0, 1.0, hiRes, hiRes, 0.0, SnapshotUtilsEx::kCsCMYK, kFalse);
 	sRasterizing = kTrue;	// この Draw 中に再入する HandleDrawEvent はマークを描かない(自己参照防止)
-	ErrorCode drewTH = snapTH->Draw(IShape::kPreviewMode);
+	// アンチエイリアスを OFF にしてラスタ化する(第4引数 enableAntiAliasing=kFalse)。エッジの中間調(灰にじみ)を
+	//   無くし、画素内で収まる微小ズレ由来の帯状ノイズが差分として拾われるのを抑える。fullRes / greek は既定維持。
+	//   ※ target / source は必ず同じ AA 設定でラスタ化すること(片方だけだと全エッジが差分になる)。
+	ErrorCode drewTH = snapTH->Draw(IShape::kPreviewMode, kFalse, 7.0, kFalse);
 	sRasterizing = kFalse;
 	AGMImageAccessor* accTH = (drewTH == kSuccess) ? snapTH->CreateAGMImageAccessor() : nil;
 
 	SnapshotUtilsEx* snapSH = new SnapshotUtilsEx(sourceRef, 1.0, 1.0, hiRes, hiRes, 0.0, SnapshotUtilsEx::kCsCMYK, kFalse);
 	sRasterizing = kTrue;
-	ErrorCode drewSH = snapSH->Draw(IShape::kPreviewMode);
+	ErrorCode drewSH = snapSH->Draw(IShape::kPreviewMode, kFalse, 7.0, kFalse);	// 同上: AA OFF(両者同条件)
 	sRasterizing = kFalse;
 	AGMImageAccessor* accSH = (drewSH == kSuccess) ? snapSH->CreateAGMImageAccessor() : nil;
 

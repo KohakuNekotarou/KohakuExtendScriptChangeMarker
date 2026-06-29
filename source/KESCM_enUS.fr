@@ -31,7 +31,7 @@ resource StringTable (kSDKDefStringsResourceID + index_enUS)
         kEuropeanWinToMacEncodingConverter,		// Character encoding converter (irp) I made this WinToMac as we have a bias to generate on Win...
         {
         	 // ----- Menu strings
-                kKESCMCompanyKey,					kKESCMCompanyValue,
+                kKESCMCompanyKey,					"Kohaku Plug-Ins",	// メニュー束ね名(表示)。会社名 kKESCMCompanyValue とは別概念で固定
                 kKESCMAboutMenuKey,					kKESCMPluginName "[US]...",
                 kKESCMPluginsMenuKey,				kKESCMPluginName "[US]",
 	

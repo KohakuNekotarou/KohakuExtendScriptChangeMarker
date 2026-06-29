@@ -33,7 +33,7 @@ resource StringTable (kSDKDefStringsResourceID + index_jaJP)
 
         {
         	// ----- Menu strings
-                kKESCMCompanyKey,					kKESCMCompanyValue,
+                kKESCMCompanyKey,					"Kohaku Plug-Ins",	// 日本語ロケールも英語表記で統一(会社名 kKESCMCompanyValue とは別)
                 kKESCMAboutMenuKey,					kKESCMPluginName "[JP]...",
                 kKESCMPluginsMenuKey,				kKESCMPluginName "[JP]",
 
