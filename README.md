@@ -9,3 +9,9 @@ Adobe InDesign C++ SDK Plug-In.
 
 ## 注意
 どの様な問題が起こっても責任を取れません、ご利用は自己責任でお願いします。
+
+## 連絡
+農作業の合間に趣味でInDesignのScriptやPlugInを作っています。
+お仕事のお依頼は
+kohaku.nekotarou@gmail.com
+まで、日本国内のみ対応します。
