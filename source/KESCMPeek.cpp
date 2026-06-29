@@ -415,7 +415,7 @@ IEventDispatcher::EventTypeList KESCMPeekWatcher::WatchEvent(IEvent* e)
 			KESCMDrawEventHandler::sToastVisible = kFalse;	// 色サンプルのトーストが出ていれば消す(db が消えたため)
 			KESCMDrawEventHandler::sToastDB = nil;
 			KESCMDrawEventHandler::sMarksVisible = kFalse;	// 既定(非表示)へ
-			KESCMDrawEventHandler::sMarkScreenOpacity = 1.0;	// 不透明度も既定へ戻す
+			KESCMDrawEventHandler::sMarkScreenOpacity = KESCMBaseScreenOpacity();	// 不透明度も基準値(印刷設定に応じる)へ戻す。他の解除箇所と一貫
 			KESCMDrawEventHandler::DropAllOrig();
 			return interest;
 		}

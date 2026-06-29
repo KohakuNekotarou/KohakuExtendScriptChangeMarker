@@ -8,7 +8,6 @@
 
 #include "VCPlugInHeaders.h"
 
-#include "PersistUtils.h"
 #include "IDataBase.h"
 #include "IControlView.h"
 #include "ILayoutUIUtils.h"
@@ -38,11 +37,6 @@ static bool16 KESCMReadCmykPixel(const UIDRef& pageRef, const PMPoint& spreadPt,
 	if (pageRef.GetDataBase() == nil || pageRef.GetUID() == kInvalidUID)
 		return kFalse;
 
-	// 下の SnapshotUtilsEx は fullRes 描画ゆえ、配置画像のフル解像度生成などを誘発して文書を dirty に
-	// する(プリントプレビューと同種)。サンプリングは「論理的に const」な操作なので、元々クリーンなら
-	// 描画後もクリーンへ戻す(元々変更済みなら何もしない=本物の変更は消さない)。SDK 標準の RAII を使う。
-	IDataBase::SaveRestoreModifiedState guard(pageRef.GetDataBase());
-
 	// クリック点まわりの極小矩形(spread 座標)。boundsToSpreadMatrix=identity(=既に spread 座標)。
 	const PMReal hp = kKESCMSampleHalfPt;
 	PMRect clip(spreadPt.X() - hp, spreadPt.Y() - hp, spreadPt.X() + hp, spreadPt.Y() + hp);
@@ -50,7 +44,9 @@ static bool16 KESCMReadCmykPixel(const UIDRef& pageRef, const PMPoint& spreadPt,
 	SnapshotUtilsEx* snap = new SnapshotUtilsEx(clip, PMMatrix(), pageRef, 1.0, 1.0,
 		kKESCMSampleDpi, 72.0, 0.0, SnapshotUtilsEx::kCsCMYK, kFalse);
 	KESCMDrawEventHandler::sRasterizing = kTrue;	// この Draw 中の再入でマークを描かせない
-	ErrorCode drew = snap->Draw(IShape::kPreviewMode, kTrue /*fullRes*/, 7.0, kFalse /*AA off*/);
+	// 枠の比較(KESCMDrawEventHandler)と同じプロキシ描画(fullRes=kFalse)。配置画像のフル解像度生成を
+	// 誘発しないので文書を dirty にせず、dirty 回避の SaveRestoreModifiedState guard は不要。
+	ErrorCode drew = snap->Draw(IShape::kPreviewMode, kFalse /*fullRes*/, 7.0, kFalse /*AA off*/);
 	KESCMDrawEventHandler::sRasterizing = kFalse;
 	AGMImageAccessor* acc = (drew == kSuccess) ? snap->CreateAGMImageAccessor() : nil;
 
