@@ -41,19 +41,22 @@ resource StringTable (kSDKDefStringsResourceID + index_jaJP)
                 // テーブル(kResourceUTF8Encoded)では使えない。UTF-8 リテラルで同じ文言を直接記述する。
                 kSDKDefAboutThisPlugInMenuKey,			"このプラグインについて…(&U)",
                 kKESCMAboutScriptMenuKey,			"スクリプトについて…",
+                kKESCMUsageMenuKey,				"使い方…",
 
                 // ----- Command strings
 
                 // ----- Window strings
 
                 // ----- Panel/dialog strings
+                // パネル UI は英語表記で統一(説明文 kKESCMHintKey のみ日本語のまま)。
                 kKESCMPanelTitleKey,			"KohakuChangeMarker",
-                kKESCMStartButtonKey,			"開始",
-                kKESCMClearButtonKey,			"解除",
-                kKESCMPrintCheckKey,			"比較枠の印刷",
+                kKESCMTargetLabelKey,			"Target:",
+                kKESCMSourceLabelKey,			"Source:",
+                kKESCMStartButtonKey,			"Start",
+                kKESCMPrintCheckKey,			"Print comparison marks",
                 kKESCMOpacity25Key,				"25%",
-                kKESCMOpacityNormalKey,			"通常",
-                kKESCMHintKey,					"<ShiftCtrlAltは離せます>\n中マウスボタン=\n　25%比較枠(押中)\n中マウスボタン+Shift=\n　元(押中)\n中マウスボタン+Alt=\n　元50%(押中)\n中マウスボタン+Ctrl=\n　スプレッド単位の比較更新\n中マウスボタン+Shift+Alt=\n　比較枠(押中)\n中マウスボタン+Shift+Ctrl+Alt=\n　色情報(押中)",
+                kKESCMOpacityNormalKey,			"Normal",
+                kKESCMHintKey,					"中マウスボタン=\n　25%比較枠(押中)\n中マウスボタン+Shift=\n　元(押中)\n中マウスボタン+Alt=\n　元50%(押中)\n中マウスボタン+Ctrl=\n　スプレッド単位の比較更新\n中マウスボタン+Shift+Alt=\n　比較枠(押中)\n中マウスボタン+Shift+Ctrl+Alt=\n　色情報(押中)\n\nShiftCtrlAltは離せます\n\n比較枠の印刷をONにしても、ファイル＞書き出しのPDFには出ません。PDFにしたい場合は、プリントでプリンターの選択でPDFを選んでください。",
 
               // ----- Error strings
 

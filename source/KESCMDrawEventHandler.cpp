@@ -716,6 +716,9 @@ static void KESCMDrawRingForPrint(IGraphicsPort* gPort, KESCMOverlayEntry* e)
 
 	// リングの不透明度。通常=画面と同じ(kKESCMRingAlpha/255=1.0 不透明) / faint=約25%(kKESCMFaintOpacity)。
 	const PMReal op = KESCMDrawEventHandler::sPrintFaint ? kKESCMFaintOpacity : (kKESCMRingAlpha / PMReal(255.0));
+	// 既知の制限: 透明効果のあるページでは、ここで描く枠/リングがフラットナにラスタ化され、CMYK 変換で
+	// 色がやや沈む(透明画像のあるページだけ枠が濃く見える)。色を CMYK 指定にしても解消せず(=色値ではなく
+	// 透明機能で描いていることが原因)、不透明ベクター化は25%の「透け」を失うため見送り。現状は元の RGB 指定のまま。
 	struct PassDef { uint8* buf; uint8 r, g, b; };
 	PassDef passes[2] = { { maskR, 255, 0, 0 }, { maskB, 0, 0, 255 } };	// 赤 / 青
 
@@ -959,6 +962,13 @@ bool16 KESCMDrawEventHandler::HandleDrawEvent(ClassID eventID, void* eventData)
 		// 枠の画像(リング)を blit する。translate/scale はこの gsave 内だけ。
 		{
 			AutoGSave ag(gPort);
+			// ★この描画を「このページの矩形よりわずかに内側」に限定する(spread 座標でクリップ)。見開きの
+			// 2ページはノドで隙間なく隣接し、ページ矩形の端=隣ページの端=共有線になる。単に pr でクリップ
+			// すると枠の最外周がその共有線に乗り、隣(変化なし)ページのノドに 1px 線が出る。そこで pr を
+			// 約1pt 内側に縮めてクリップし、枠が共有線に届かないようにする(枠はページ端の1px内側=見た目ほぼ不変)。
+			const PMReal kKESCMClipInset = 1.0;	// pt
+			gPort->rectclip(pr.Left()   + kKESCMClipInset, pr.Top()    + kKESCMClipInset,
+			                pr.Width()  - kKESCMClipInset * 2.0, pr.Height() - kKESCMClipInset * 2.0);
 			gPort->translate(pr.Left(), pr.Top());				// ページ左上へ
 			gPort->scale(pr.Width() / iw, pr.Height() / ih);	// 画像px → ページ矩形にフィット
 			// ★印刷/PDF 時は image() blit だと枠が不透明になる(フラットナが画像の部分 alpha を honor しない)。

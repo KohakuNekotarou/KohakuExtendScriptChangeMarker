@@ -29,6 +29,7 @@ public:
 private:
 	void DoAbout();
 	void DoAboutScript();
+	void DoUsage();
 };
 
 /* Binds the C++ implementation class onto its ImplementationID. */
@@ -46,6 +47,10 @@ void KESCMActionComponent::DoAction(IActiveContext* /*ac*/, ActionID actionID, G
 
 		case kKESCMPopupAboutScriptActionID:
 			this->DoAboutScript();
+			break;
+
+		case kKESCMPopupUsageActionID:
+			this->DoUsage();
 			break;
 
 		default:
@@ -73,6 +78,20 @@ void KESCMActionComponent::DoAboutScript()
 	CAlert::ModalAlert
 	(
 		kKESCMScriptHelpStringKey,	// Alert string (kescmToast usage)
+		kOKString,					// OK button
+		kNullString,				// No second button
+		kNullString,				// No third button
+		1,							// Set OK button to default
+		CAlert::eInformationIcon	// Information icon
+	);
+}
+
+/* DoUsage — パネルのフライアウト「使い方」。中ボタン操作リファレンス(=旧パネルの説明文)を表示する。 */
+void KESCMActionComponent::DoUsage()
+{
+	CAlert::ModalAlert
+	(
+		kKESCMHintKey,				// Alert string (gesture reference; formerly the panel hint)
 		kOKString,					// OK button
 		kNullString,				// No second button
 		kNullString,				// No third button

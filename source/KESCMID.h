@@ -142,6 +142,7 @@ DECLARE_PMID(kActionIDSpace, kKESCMAboutActionID, kKESCMPrefix + 0)
 DECLARE_PMID(kActionIDSpace, kKESCMPanelWidgetActionID, kKESCMPrefix + 1)	// パネルの表示/非表示(ウィンドウメニュー)
 DECLARE_PMID(kActionIDSpace, kKESCMPopupAboutThisActionID, kKESCMPrefix + 2)	// パネルのフライアウトの「このプラグインについて」
 DECLARE_PMID(kActionIDSpace, kKESCMPopupAboutScriptActionID, kKESCMPrefix + 3)	// パネルのフライアウトの「スクリプトについて」
+DECLARE_PMID(kActionIDSpace, kKESCMPopupUsageActionID, kKESCMPrefix + 4)	// パネルのフライアウトの「使い方」
 //DECLARE_PMID(kActionIDSpace, kKESCMActionID, kKESCMPrefix + 5)
 //DECLARE_PMID(kActionIDSpace, kKESCMActionID, kKESCMPrefix + 6)
 //DECLARE_PMID(kActionIDSpace, kKESCMActionID, kKESCMPrefix + 7)
@@ -169,16 +170,17 @@ DECLARE_PMID(kActionIDSpace, kKESCMPopupAboutScriptActionID, kKESCMPrefix + 3)	/
 DECLARE_PMID(kWidgetIDSpace, kKESCMPanelWidgetID, kKESCMPrefix + 0)
 DECLARE_PMID(kWidgetIDSpace, kKESCMTargetTextWidgetID, kKESCMPrefix + 1)
 DECLARE_PMID(kWidgetIDSpace, kKESCMSourceTextWidgetID, kKESCMPrefix + 26)
-DECLARE_PMID(kWidgetIDSpace, kKESCMStartButtonWidgetID, kKESCMPrefix + 27)
-DECLARE_PMID(kWidgetIDSpace, kKESCMClearButtonWidgetID, kKESCMPrefix + 28)
+// kWidgetIDSpace +27 は現在空き(旧 kKESCMStartButtonWidgetID; 開始/解除を kKESCMToggleButtonWidgetID に統合)
+// kWidgetIDSpace +28 は現在空き(旧 kKESCMClearButtonWidgetID; 同上)
 DECLARE_PMID(kWidgetIDSpace, kKESCMPrintCheckWidgetID, kKESCMPrefix + 29)
 DECLARE_PMID(kWidgetIDSpace, kKESCMOpacityClusterWidgetID, kKESCMPrefix + 30)
 DECLARE_PMID(kWidgetIDSpace, kKESCMOpacity25RadioWidgetID, kKESCMPrefix + 31)
 DECLARE_PMID(kWidgetIDSpace, kKESCMOpacityNormalRadioWidgetID, kKESCMPrefix + 32)
-DECLARE_PMID(kWidgetIDSpace, kKESCMHintTextWidgetID, kKESCMPrefix + 33)
+// kWidgetIDSpace +33 は現在空き(旧 kKESCMHintTextWidgetID; 説明文はパネルから撤去しフライアウト「使い方」へ移動)
 DECLARE_PMID(kWidgetIDSpace, kKESCMIconOnWidgetID, kKESCMPrefix + 34)
 DECLARE_PMID(kWidgetIDSpace, kKESCMIconOffWidgetID, kKESCMPrefix + 35)
 DECLARE_PMID(kWidgetIDSpace, kKESCMStatusTextWidgetID, kKESCMPrefix + 36)
+DECLARE_PMID(kWidgetIDSpace, kKESCMToggleButtonWidgetID, kKESCMPrefix + 37)	// 開始/解除を兼ねるトグルボタン
 //DECLARE_PMID(kWidgetIDSpace, kKESCMWidgetID, kKESCMPrefix + 2)
 //DECLARE_PMID(kWidgetIDSpace, kKESCMWidgetID, kKESCMPrefix + 3)
 //DECLARE_PMID(kWidgetIDSpace, kKESCMWidgetID, kKESCMPrefix + 4)
@@ -237,6 +239,7 @@ DECLARE_PMID(kScriptInfoIDSpace, kKESCMSetPrintMarksMethodScriptElement, kKESCMP
 #define kKESCMAboutBoxStringKey	kKESCMStringPrefix "kKESCMAboutBoxStringKey"
 #define kKESCMAboutScriptMenuKey	kKESCMStringPrefix "kKESCMAboutScriptMenuKey"	// パネルのフライアウト「スクリプトについて」のメニュー名
 #define kKESCMScriptHelpStringKey	kKESCMStringPrefix "kKESCMScriptHelpStringKey"	// その本文(kescmToast の使い方)
+#define kKESCMUsageMenuKey		kKESCMStringPrefix "kKESCMUsageMenuKey"	// パネルのフライアウト「使い方」のメニュー名(本文は kKESCMHintKey を再利用)
 #define kKESCMTargetMenuPath kKESCMPluginsMenuPath
 
 // パネル: 内部フライアウト(ポップアップ)メニュー名＋そのメニューパス。
@@ -245,8 +248,9 @@ DECLARE_PMID(kScriptInfoIDSpace, kKESCMSetPrintMarksMethodScriptElement, kKESCMP
 
 // パネルの文字列キー(KESCM_enUS.fr / KESCM_jaJP.fr でローカライズ)。
 #define kKESCMPanelTitleKey		kKESCMStringPrefix "kKESCMPanelTitleKey"
-#define kKESCMStartButtonKey	kKESCMStringPrefix "kKESCMStartButtonKey"
-#define kKESCMClearButtonKey	kKESCMStringPrefix "kKESCMClearButtonKey"
+#define kKESCMTargetLabelKey	kKESCMStringPrefix "kKESCMTargetLabelKey"	// パネルの "Target:" ラベル。リテラルだとシステム訳と衝突するため自前キーで持つ
+#define kKESCMSourceLabelKey	kKESCMStringPrefix "kKESCMSourceLabelKey"	// パネルの "Source:" ラベル。リテラル "Source:" は日本語ロケールで「スタイルソース :」に化けるため自前キーで持つ
+#define kKESCMStartButtonKey	kKESCMStringPrefix "kKESCMStartButtonKey"	// トグルボタンの .fr 初期キャプション(未開始=Start)。Stop ラベルは Observer が英語リテラルで設定
 #define kKESCMPrintCheckKey		kKESCMStringPrefix "kKESCMPrintCheckKey"
 #define kKESCMOpacity25Key		kKESCMStringPrefix "kKESCMOpacity25Key"
 #define kKESCMOpacityNormalKey	kKESCMStringPrefix "kKESCMOpacityNormalKey"
@@ -257,9 +261,10 @@ DECLARE_PMID(kScriptInfoIDSpace, kKESCMSetPrintMarksMethodScriptElement, kKESCMP
 #define kKESCMIconOffResID	1002
 #define kKESCMPaletteIconResID	1003	// パネルが折りたたまれた時に出る小さいドックタブアイコン
 
-// Menu item positions:
-#define kKESCMAboutThisMenuItemPosition		11.0
-#define kKESCMAboutScriptMenuItemPosition	12.0	// 「このプラグインについて」(11.0)の下に「スクリプトについて」
+// Menu item positions (flyout order): 使い方(10) → スクリプトについて(11) → このプラグインについて(12)
+#define kKESCMUsageMenuItemPosition			10.0	// 「使い方」を先頭に
+#define kKESCMAboutScriptMenuItemPosition	11.0	// その下に「スクリプトについて」
+#define kKESCMAboutThisMenuItemPosition		12.0	// 末尾に「このプラグインについて」
 
 
 // Initial data format version numbers

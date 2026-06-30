@@ -201,16 +201,22 @@ resource MenuDef (kSDKDefMenuResourceID)
 		kSDKDefAlphabeticPosition,
 		kSDKDefIsNotDynamicMenuFlag,
 
-		// "About this plug-in" on the panel flyout (popup) menu.
-		kKESCMPopupAboutThisActionID,
+		// "How to Use" on the panel flyout (popup) menu (shown first).
+		kKESCMPopupUsageActionID,
 		kKESCMPopupMenuPath,
-		kKESCMAboutThisMenuItemPosition,
+		kKESCMUsageMenuItemPosition,
 		kSDKDefIsNotDynamicMenuFlag,
 
 		// "About scripting" on the panel flyout (popup) menu.
 		kKESCMPopupAboutScriptActionID,
 		kKESCMPopupMenuPath,
 		kKESCMAboutScriptMenuItemPosition,
+		kSDKDefIsNotDynamicMenuFlag,
+
+		// "About this plug-in" on the panel flyout (popup) menu (shown last).
+		kKESCMPopupAboutThisActionID,
+		kKESCMPopupMenuPath,
+		kKESCMAboutThisMenuItemPosition,
 		kSDKDefIsNotDynamicMenuFlag,
 	}
 };
@@ -231,8 +237,8 @@ resource ActionDef (kSDKDefActionResourceID)
 		kSDKDefInvisibleInKBSCEditorFlag,	// KBSC editor visibility
 
 		kKESCMActionComponentBoss,
-		kKESCMPopupAboutThisActionID,
-		kSDKDefAboutThisPlugInMenuKey,
+		kKESCMPopupUsageActionID,
+		kKESCMUsageMenuKey,
 		kOtherActionArea,
 		kNormalAction,
 		kDisableIfLowMem,
@@ -242,6 +248,15 @@ resource ActionDef (kSDKDefActionResourceID)
 		kKESCMActionComponentBoss,
 		kKESCMPopupAboutScriptActionID,
 		kKESCMAboutScriptMenuKey,
+		kOtherActionArea,
+		kNormalAction,
+		kDisableIfLowMem,
+		kInvalidInterfaceID,
+		kSDKDefInvisibleInKBSCEditorFlag,
+
+		kKESCMActionComponentBoss,
+		kKESCMPopupAboutThisActionID,
+		kSDKDefAboutThisPlugInMenuKey,
 		kOtherActionArea,
 		kNormalAction,
 		kDisableIfLowMem,
@@ -398,7 +413,7 @@ resource KESCMPanelWidget(kSDKDefPanelResourceID + index_enUS)
 	kKESCMPanelWidgetID,			// WidgetID
 	kPMRsrcID_None,					// RsrcID
 	kBindNone,						// Binding
-	0, 0, 240, 580,					// Frame: left, top, right, bottom
+	0, 0, 192, 300,					// Frame: left, top, right, bottom (width 80% of original 240)
 	kTrue, kTrue,					// Visible, Enabled
 	kFalse,							// Erase background
 	kInterfacePaletteFill,			// Erase to color
@@ -411,10 +426,10 @@ resource KESCMPanelWidget(kSDKDefPanelResourceID + index_enUS)
 			kKESCMTargetTextWidgetID,
 			kSysStaticTextPMRsrcId,
 			kBindLeft | kBindRight | kBindTop,
-			Frame(8, 8, 232, 24)
+			Frame(8, 8, 184, 24)
 			kTrue, kTrue,
 			kAlignLeft, kEllipsizeEnd, kTrue,
-			"Target:",
+			kKESCMTargetLabelKey,
 			kInvalidWidgetID,
 		),
 		StaticTextWidget
@@ -422,10 +437,10 @@ resource KESCMPanelWidget(kSDKDefPanelResourceID + index_enUS)
 			kKESCMSourceTextWidgetID,
 			kSysStaticTextPMRsrcId,
 			kBindLeft | kBindRight | kBindTop,
-			Frame(8, 26, 232, 42)
+			Frame(8, 26, 184, 42)
 			kTrue, kTrue,
 			kAlignLeft, kEllipsizeEnd, kTrue,
-			"Source:",
+			kKESCMSourceLabelKey,
 			kInvalidWidgetID,
 		),
 
@@ -434,28 +449,20 @@ resource KESCMPanelWidget(kSDKDefPanelResourceID + index_enUS)
 		(
 			kInvalidWidgetID, kPMRsrcID_None,
 			kBindLeft | kBindRight | kBindTop,
-			Frame(0, 48, 240, 50)
+			Frame(0, 48, 192, 50)
 			kTrue, kTrue,
 		),
 
-		// Start / Clear buttons.
+		// Start / Stop toggle button. The observer flips the label between
+		// "Start" (idle) and "Stop" (armed/comparing) based on the shared state.
 		ButtonWidget
 		(
-			kKESCMStartButtonWidgetID,
+			kKESCMToggleButtonWidgetID,
 			kSysButtonPMRsrcId,
 			kBindLeft | kBindRight | kBindTop,
-			Frame(12, 56, 228, 80)
+			Frame(12, 56, 180, 80)
 			kTrue, kTrue,
 			kKESCMStartButtonKey,
-		),
-		ButtonWidget
-		(
-			kKESCMClearButtonWidgetID,
-			kSysButtonPMRsrcId,
-			kBindLeft | kBindRight | kBindTop,
-			Frame(12, 84, 228, 108)
-			kTrue, kTrue,
-			kKESCMClearButtonKey,
 		),
 
 		// Print marks checkbox.
@@ -464,7 +471,7 @@ resource KESCMPanelWidget(kSDKDefPanelResourceID + index_enUS)
 			kKESCMPrintCheckWidgetID,
 			kSysCheckBoxPMRsrcId,
 			kBindLeft | kBindTop,
-			Frame(12, 116, 228, 132)
+			Frame(12, 88, 180, 104)
 			kTrue, kTrue,
 			kAlignLeft,
 			kKESCMPrintCheckKey,
@@ -476,7 +483,7 @@ resource KESCMPanelWidget(kSDKDefPanelResourceID + index_enUS)
 			kKESCMOpacityClusterWidgetID,
 			kPMRsrcID_None,
 			kBindLeft | kBindTop,
-			Frame(12, 138, 228, 188)
+			Frame(12, 110, 180, 160)
 			kTrue, kTrue,
 			"",
 			{
@@ -485,7 +492,7 @@ resource KESCMPanelWidget(kSDKDefPanelResourceID + index_enUS)
 					kKESCMOpacity25RadioWidgetID,
 					kSysRadioButtonPMRsrcId,
 					kBindNone,
-					Frame(6, 4, 210, 20)
+					Frame(6, 4, 160, 20)
 					kTrue, kTrue,
 					kKESCMOpacity25Key,
 				),
@@ -494,27 +501,11 @@ resource KESCMPanelWidget(kSDKDefPanelResourceID + index_enUS)
 					kKESCMOpacityNormalRadioWidgetID,
 					kSysRadioButtonPMRsrcId,
 					kBindNone,
-					Frame(6, 24, 210, 40)
+					Frame(6, 24, 160, 40)
 					kTrue, kTrue,
 					kKESCMOpacityNormalKey,
 				),
 			}
-		),
-
-		// Usage hint (gesture reference).
-		StaticMultiLineTextWidget
-		(
-			kKESCMHintTextWidgetID,
-			kPMRsrcID_None,
-			kBindLeft | kBindRight | kBindTop,
-			Frame(8, 194, 232, 452)
-			kTrue, kTrue,
-			kAlignLeft, kDontEllipsize, kTrue,
-			kInvalidWidgetID,
-			kPaletteWindowFontId,
-			3,
-			0, 0,
-			kKESCMHintKey,
 		),
 
 		// Status icon (OFF visible by default; the observer swaps ON/OFF based on the armed state).
@@ -522,8 +513,8 @@ resource KESCMPanelWidget(kSDKDefPanelResourceID + index_enUS)
 		(
 			kKESCMIconOffWidgetID,
 			kKESCMIconOffResID, kKESCMPluginID,
-			kBindTop,
-			Frame(88, 458, 152, 522)
+			kBindBottom,
+			Frame(64, 228, 128, 292)
 			kTrue, kTrue,
 			kADBEIconSuiteButtonType,
 		),
@@ -531,8 +522,8 @@ resource KESCMPanelWidget(kSDKDefPanelResourceID + index_enUS)
 		(
 			kKESCMIconOnWidgetID,
 			kKESCMIconOnResID, kKESCMPluginID,
-			kBindTop,
-			Frame(88, 458, 152, 522)
+			kBindBottom,
+			Frame(64, 228, 128, 292)
 			kFalse, kTrue,
 			kADBEIconSuiteButtonType,
 		),
@@ -542,8 +533,8 @@ resource KESCMPanelWidget(kSDKDefPanelResourceID + index_enUS)
 		(
 			kKESCMStatusTextWidgetID,
 			kPMRsrcID_None,
-			kBindLeft | kBindRight | kBindBottom,
-			Frame(8, 528, 232, 576)
+			kBindLeft | kBindRight | kBindTop,
+			Frame(8, 168, 184, 220)
 			kTrue, kTrue,
 			kAlignLeft, kDontEllipsize, kTrue,
 			kInvalidWidgetID,

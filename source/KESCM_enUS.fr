@@ -37,6 +37,7 @@ resource StringTable (kSDKDefStringsResourceID + index_enUS)
 	
                 kSDKDefAboutThisPlugInMenuKey,			kSDKDefAboutThisPlugInMenuValue_enUS,
                 kKESCMAboutScriptMenuKey,			"About Scripting...",
+                kKESCMUsageMenuKey,				"How to Use...",
 
                 // ----- Command strings
 
@@ -44,12 +45,13 @@ resource StringTable (kSDKDefStringsResourceID + index_enUS)
 
                 // ----- Panel/dialog strings
                 kKESCMPanelTitleKey,			"KohakuChangeMarker",
+                kKESCMTargetLabelKey,			"Target:",
+                kKESCMSourceLabelKey,			"Source:",
                 kKESCMStartButtonKey,			"Start",
-                kKESCMClearButtonKey,			"Clear",
                 kKESCMPrintCheckKey,			"Print comparison marks",
                 kKESCMOpacity25Key,				"25%",
                 kKESCMOpacityNormalKey,			"Normal",
-                kKESCMHintKey,					"<Shift/Ctrl/Alt can be released>\nMiddle button =\n  25% marks (while held)\nMiddle + Shift =\n  original (while held)\nMiddle + Alt =\n  original 50% (while held)\nMiddle + Ctrl =\n  refresh spread compare\nMiddle + Shift+Alt =\n  marks (while held)\nMiddle + Shift+Ctrl+Alt =\n  color info (while held)",
+                kKESCMHintKey,					"Middle button =\n  25% marks (while held)\nMiddle + Shift =\n  original (while held)\nMiddle + Alt =\n  original 50% (while held)\nMiddle + Ctrl =\n  refresh spread compare\nMiddle + Shift+Alt =\n  marks (while held)\nMiddle + Shift+Ctrl+Alt =\n  color info (while held)\n\nShift/Ctrl/Alt can be released\n\nEven with comparison-mark printing ON, File > Export to PDF won't include them. To make a PDF, use Print and choose a PDF printer.",
 
 		// ----- Misc strings
                 kKESCMAboutBoxStringKey,			kKESCMPluginName ", version " kKESCMVersion "\n\n"

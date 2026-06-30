@@ -138,8 +138,7 @@ void KESCMPanelObserver::AutoAttach()
 	if (pcd == nil)
 		return;
 
-	this->AttachWidget(pcd, kKESCMStartButtonWidgetID,        IBooleanControlData::kDefaultIID);
-	this->AttachWidget(pcd, kKESCMClearButtonWidgetID,        IBooleanControlData::kDefaultIID);
+	this->AttachWidget(pcd, kKESCMToggleButtonWidgetID,       IBooleanControlData::kDefaultIID);
 	this->AttachWidget(pcd, kKESCMPrintCheckWidgetID,         ITriStateControlData::kDefaultIID);
 	this->AttachWidget(pcd, kKESCMOpacity25RadioWidgetID,     ITriStateControlData::kDefaultIID);
 	this->AttachWidget(pcd, kKESCMOpacityNormalRadioWidgetID, ITriStateControlData::kDefaultIID);
@@ -163,8 +162,7 @@ void KESCMPanelObserver::AutoDetach()
 	if (pcd == nil)
 		return;
 
-	this->DetachWidget(pcd, kKESCMStartButtonWidgetID,        IBooleanControlData::kDefaultIID);
-	this->DetachWidget(pcd, kKESCMClearButtonWidgetID,        IBooleanControlData::kDefaultIID);
+	this->DetachWidget(pcd, kKESCMToggleButtonWidgetID,       IBooleanControlData::kDefaultIID);
 	this->DetachWidget(pcd, kKESCMPrintCheckWidgetID,         ITriStateControlData::kDefaultIID);
 	this->DetachWidget(pcd, kKESCMOpacity25RadioWidgetID,     ITriStateControlData::kDefaultIID);
 	this->DetachWidget(pcd, kKESCMOpacityNormalRadioWidgetID, ITriStateControlData::kDefaultIID);
@@ -212,8 +210,13 @@ void KESCMPanelObserver::Update(const ClassID& theChange, ISubject* theSubject, 
 	{
 		switch (wid.Get())
 		{
-			case kKESCMStartButtonWidgetID:        this->DoStart(); break;
-			case kKESCMClearButtonWidgetID:        this->DoClear(); break;
+			// 単一トグル: 開始中なら解除、未開始なら開始。ラベルは UpdateInfoDisplay が切替。
+			case kKESCMToggleButtonWidgetID:
+				if (KESCMIsArmed() && (KESCMArmedTargetDB() != nil))
+					this->DoClear();
+				else
+					this->DoStart();
+				break;
 			case kKESCMPrintCheckWidgetID:         this->ApplyPrintMarks(); this->UpdateOpacityEnabled(); break;
 			// 通常/25% の切替: 印刷ON中のみ反映(OFF中は次に印刷ONにしたとき反映される)。
 			case kKESCMOpacity25RadioWidgetID:
@@ -363,6 +366,19 @@ void KESCMPanelObserver::UpdateInfoDisplay()
 	IControlView* offView = this->FindW(kKESCMIconOffWidgetID);
 	if (onView  != nil) onView->ShowView(started ? kTrue : kFalse);
 	if (offView != nil) offView->ShowView(started ? kFalse : kTrue);
+
+	// トグルボタンのラベル: 開始中=Stop / 未開始=Start(英語固定)。
+	IControlView* toggleView = this->FindW(kKESCMToggleButtonWidgetID);
+	if (toggleView != nil)
+	{
+		InterfacePtr<ITextControlData> tcd(toggleView, UseDefaultIID());
+		if (tcd != nil)
+		{
+			PMString label(started ? "Stop" : "Start");
+			label.SetTranslatable(kFalse);
+			tcd->SetString(label, kTrue /*invalidate*/, kFalse /*don't notify*/);
+		}
+	}
 }
 
 void KESCMPanelObserver::SetStatus(const PMString& s)
