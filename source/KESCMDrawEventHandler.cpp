@@ -52,6 +52,7 @@
 
 // プロジェクト内インクルード:
 #include "KESCMID.h"
+#include "KESCMCore.h"               // KESCMHandleDocsClosed(クローズ検知の後始末を一本化)
 #include "KESCMDrawEventHandler.h"
 
 CREATE_PMINTERFACE(KESCMDrawEventHandler, kKESCMDrawEventHandlerImpl)
@@ -799,20 +800,21 @@ bool16 KESCMDrawEventHandler::HandleDrawEvent(ClassID eventID, void* eventData)
 		return kFalse;
 
 	// ★保持マークのドキュメントが閉じられていたら破棄する(クローズ監視の代わり)。draw は開いている
-	//   ドキュメントについてのみ発火するので、ここで sDB/sOrigDB の生存を確認できる。閉じていれば保持
-	//   バッファを解放し、ダングリング参照(別 db がアドレス再利用した際の誤一致)とメモリ滞留を防ぐ。
+	//   ドキュメントについてのみ発火するので、ここで sDB/sOrigDB の生存を確認できる。
 	//   マークが無い通常時(sDB==nil かつ sOrigDB==nil)は何も問い合わせない=コストゼロ。
+	//   ★以前はここで DropAll/DropAllOrig だけを個別に呼び、マークだけを消して peek arm やパネル表示は
+	//   そのままにしていた(枠は消えるのにボタンは Stop のまま、という食い違いの原因)。通常はドキュメント
+	//   クローズ responder(KESCMHandleDocsClosed)がクローズ直後に先回りして片付けるためこの分岐へは実質
+	//   到達しないが、保険として残す以上は KESCMHandleDocsClosed に一本化し、Stop 相当のフルクリーンアップ
+	//   (peek arm 解除・パネル更新も)を確実に行う。
 	if (sDB != nil || sOrigDB != nil)
 	{
 		InterfacePtr<IApplication> app(GetExecutionContextSession()->QueryApplication());
 		InterfacePtr<IDocumentList> docList(app ? app->QueryDocumentList() : nil);
-		if (docList != nil)
-		{
-			if (sDB != nil && docList->FindDocByDataBase(sDB) == nil)
-				DropAll();			// sDB=nil になる
-			if (sOrigDB != nil && docList->FindDocByDataBase(sOrigDB) == nil)
-				DropAllOrig();		// sOrigDB=nil になる
-		}
+		if (docList != nil &&
+		    ((sDB != nil && docList->FindDocByDataBase(sDB) == nil) ||
+		     (sOrigDB != nil && docList->FindDocByDataBase(sOrigDB) == nil)))
+			KESCMHandleDocsClosed();
 	}
 
 	// 画面スケール(ズーム)を一度だけ取得。画面描画時のみ非nil。

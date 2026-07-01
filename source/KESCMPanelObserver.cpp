@@ -410,13 +410,7 @@ void KESCMPanelObserver::UpdateInfoDisplay()
 
 void KESCMPanelObserver::SetStatus(const PMString& s)
 {
-	gSessionStatus = s;	// パネルを隠して再表示したときに復元できるよう、今セッションの表示内容を覚えておく
-	IControlView* cv = this->FindW(kKESCMStatusTextWidgetID);
-	if (cv == nil)
-		return;
-	InterfacePtr<ITextControlData> tcd(cv, UseDefaultIID());
-	if (tcd != nil)
-		tcd->SetString(s);
+	KESCMSetStatus(s);
 }
 
 bool16 KESCMPanelObserver::IsSelected(const WidgetID& wid)
@@ -461,6 +455,36 @@ void KESCMRefreshPanel()
 		return;		// パネルは隠れている: 触る先が無い。
 	InterfacePtr<IPanelControlData> pcd(panel, UseDefaultIID());
 	KESCMApplyPanelInfo(pcd);
+}
+
+//========================================================================================
+// KESCMSetStatus(KESCMCore.h で宣言)
+//   パネルのステータス行を更新する。メンバ SetStatus(自パネル)と同じ処理を自由関数として公開し、
+//   クローズレスポンダ(KESCMHandleDocsClosed)からも Stop 相当のメッセージを出せるようにする。
+//   パネルが隠れていてもセッション状態(gSessionStatus)は覚えておき、再表示時に復元する。
+//========================================================================================
+void KESCMSetStatus(const PMString& s)
+{
+	gSessionStatus = s;	// パネルを隠して再表示したときに復元できるよう、今セッションの表示内容を覚えておく
+
+	InterfacePtr<IApplication> app(GetExecutionContextSession()->QueryApplication());
+	if (app == nil)
+		return;
+	InterfacePtr<IPanelMgr> panelMgr(app->QueryPanelManager());
+	if (panelMgr == nil)
+		return;
+	IControlView* panel = panelMgr->GetVisiblePanel(kKESCMPanelWidgetID);
+	if (panel == nil)
+		return;		// パネルは隠れている: 触る先が無い。
+	InterfacePtr<IPanelControlData> pcd(panel, UseDefaultIID());
+	if (pcd == nil)
+		return;
+	IControlView* cv = pcd->FindWidget(kKESCMStatusTextWidgetID);
+	if (cv == nil)
+		return;
+	InterfacePtr<ITextControlData> tcd(cv, UseDefaultIID());
+	if (tcd != nil)
+		tcd->SetString(s);
 }
 
 // KESCMPanelObserver.cpp 終わり。

@@ -165,9 +165,7 @@ ErrorCode KESCMDoMarkChangesDoc(IDataBase* targetDB, IDataBase* sourceDB, PMStri
 		if (changed) ++changedCount;
 	}
 
-	InterfacePtr<IDocument> doc(targetDB, targetDB->GetRootUID(), UseDefaultIID());
-	if (doc != nil)
-		Utils<ILayoutUtils>()->InvalidateViews(doc);
+	KESCMInvalidateDB(targetDB);
 
 	PMString report;
 	report.SetTranslatable(kFalse);
@@ -177,17 +175,31 @@ ErrorCode KESCMDoMarkChangesDoc(IDataBase* targetDB, IDataBase* sourceDB, PMStri
 	return kSuccess;
 }
 
+// db が非nilなら、その IDocument のビューを再描画する。呼び出し側(パネル操作時の「今アクティブな
+// 文書」)と「実際にマークが描かれている対象文書」が異なる(例: Source や無関係な第3文書が前面の
+// 状態で Stop や印刷マーク切替を行った)場合でも、両方を確実に再描画するために使う共有ヘルパ。
+void KESCMInvalidateDB(IDataBase* db)
+{
+	if (db == nil)
+		return;
+	InterfacePtr<IDocument> doc(db, db->GetRootUID(), UseDefaultIID());
+	if (doc != nil)
+		Utils<ILayoutUtils>()->InvalidateViews(doc);
+}
+
 void KESCMDoClearMarks(IDataBase* db)
 {
+	// DropAll() で sDB が nil になる前に、実際にマークが描かれていた文書を控えておく。呼び出し側の
+	// db(=操作時のアクティブ文書)が前面で Source や無関係な第3文書に切り替わっていても、対象文書の
+	// 枠が即座に消えるようにするため(タイル表示等で対象文書が同時に見えている場合に効く)。
+	IDataBase* markedDB = KESCMDrawEventHandler::sDB;
+
 	KESCMDrawEventHandler::DropAll();
 	KESCMDrawEventHandler::DropAllOrig();	// 旧版べた載せのキャッシュも解放(メモリ開放)
 
-	if (db != nil)
-	{
-		InterfacePtr<IDocument> doc(db, db->GetRootUID(), UseDefaultIID());
-		if (doc != nil)
-			Utils<ILayoutUtils>()->InvalidateViews(doc);
-	}
+	KESCMInvalidateDB(markedDB);
+	if (db != markedDB)
+		KESCMInvalidateDB(db);
 }
 
 void KESCMDoSetPrintMarks(bool16 printFlag, bool16 faintFlag, IDataBase* db)
@@ -197,12 +209,12 @@ void KESCMDoSetPrintMarks(bool16 printFlag, bool16 faintFlag, IDataBase* db)
 	// 常時表示(画面)の不透明度を印刷設定に合わせて即反映。
 	KESCMDrawEventHandler::sMarkScreenOpacity = KESCMBaseScreenOpacity();
 
-	if (db != nil)
-	{
-		InterfacePtr<IDocument> doc(db, db->GetRootUID(), UseDefaultIID());
-		if (doc != nil)
-			Utils<ILayoutUtils>()->InvalidateViews(doc);
-	}
+	// 実際にマークが描かれている対象文書(sDB)を優先して再描画する。呼び出し側 db(=アクティブ文書)が
+	// それと異なっていても(Source や無関係な第3文書が前面の状態で操作した場合)、対象文書の見た目が
+	// 即座に更新されるようにするため。Start 前(sDB==nil)は従来どおり db のみ再描画する。
+	KESCMInvalidateDB(KESCMDrawEventHandler::sDB);
+	if (db != KESCMDrawEventHandler::sDB)
+		KESCMInvalidateDB(db);
 }
 
 // 現在の印刷マーク設定を返す(パネル再表示時の状態復元に使用)。

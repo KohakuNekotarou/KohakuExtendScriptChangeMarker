@@ -49,6 +49,11 @@ bool16		KESCMFindPageUnderMouse(IDataBase* targetDB, PMReal mx, PMReal my, KESCM
 // outReport にはスクリプトメソッドが返すのと同じ状態文字列が入る。
 ErrorCode	KESCMDoMarkChangesDoc(IDataBase* targetDB, IDataBase* sourceDB, PMString& outReport);
 
+// db が非nilなら、その IDocument のビューを再描画する(nil や IDocument 取得失敗時は何もしない)。
+// Clear/印刷マーク切替/peek disarm が「呼び出し側の db」と「実際にマークが描かれている対象文書」の
+// 両方を確実に再描画するための共有ヘルパ(2つが同じ db なら二重には呼ばない)。
+void		KESCMInvalidateDB(IDataBase* db);
+
 // オーバーレイ全体(と旧版画像のキャッシュ)を破棄し、db を再描画する。
 void		KESCMDoClearMarks(IDataBase* db);
 
@@ -80,5 +85,9 @@ void		KESCMHandleDocsClosed();
 // 現在の arm 状態(KESCMIsArmed 等)に合わせて更新する。パネルが隠れていれば何もしない
 // (再表示時に AutoAttach が反映する)。実体は KESCMPanelObserver.cpp。
 void		KESCMRefreshPanel();
+
+// パネルのステータス行を更新する(KESCMPanelObserver::SetStatus と同じ処理を自由関数として公開)。
+// パネルが隠れていてもセッション状態は覚えておき、再表示時に復元する。実体は KESCMPanelObserver.cpp。
+void		KESCMSetStatus(const PMString& s);
 
 #endif // __KESCMCore_h__

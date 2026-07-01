@@ -14,7 +14,6 @@
 #include "IDataBase.h"
 #include "IGeometry.h"
 #include "IDocument.h"
-#include "ILayoutUtils.h"
 #include "ILayoutUIUtils.h"
 #include "IEventUtils.h"
 #include "IApplication.h"
@@ -215,9 +214,7 @@ static KESCMPeekResult KESCMPeekShowUnderMouse(IDataBase* targetDB, IDataBase* s
 	}
 	KESCMDrawEventHandler::sShowOriginal = kTrue;
 
-	InterfacePtr<IDocument> doc(targetDB, targetDB->GetRootUID(), UseDefaultIID());
-	if (doc != nil)
-		Utils<ILayoutUtils>()->InvalidateViews(doc);
+	KESCMInvalidateDB(targetDB);
 
 	if (outSpread) *outSpread = s;
 	if (outPages)  *outPages = captured;
@@ -337,9 +334,7 @@ static bool16 KESCMRefreshSpreadUnderMouse(IDataBase* targetDB, IDataBase* sourc
 	// 旧版画像キャッシュは古いので破棄(次の peek で現ズームで作り直し)。
 	KESCMDrawEventHandler::DropAllOrig();
 
-	InterfacePtr<IDocument> doc(targetDB, targetDB->GetRootUID(), UseDefaultIID());
-	if (doc != nil)
-		Utils<ILayoutUtils>()->InvalidateViews(doc);
+	KESCMInvalidateDB(targetDB);
 
 	if (outSpread)  *outSpread = hit.spreadIndex;
 	if (outChanged) *outChanged = changedCount;
@@ -351,12 +346,19 @@ static bool16 KESCMRefreshSpreadUnderMouse(IDataBase* targetDB, IDataBase* sourc
 // 即反映する。arm の有無に依らず使えるよう、peek 用の sPeekTargetDB ではなく sDB を使う(arm 不要)。
 static void KESCMInvalidateMarksDoc()
 {
-	IDataBase* db = KESCMDrawEventHandler::sDB;
-	if (db == nil)
-		return;
-	InterfacePtr<IDocument> doc(db, db->GetRootUID(), UseDefaultIID());
-	if (doc != nil)
-		Utils<ILayoutUtils>()->InvalidateViews(doc);
+	KESCMInvalidateDB(KESCMDrawEventHandler::sDB);
+}
+
+// 前面レイアウトビューの所属ドキュメントが、arm 済みの対象(Target)文書と一致するか。CMYK サンプリング
+// (Shift＋Ctrl＋Alt＋ミドル)とスプレッド枠の部分更新(Ctrl＋ミドル)はヒットテストを sPeekTargetDB の
+// ページ座標に対して行うため、前面が Source 側や無関係な第3文書のウィンドウだと、そちらのローカル座標を
+// 対象文書のページ座標として誤って解釈してしまう。対象文書のウィンドウ上で操作した時だけ反応させる。
+static bool16 KESCMFrontViewIsOverTarget()
+{
+	IDocument* frontDoc = Utils<ILayoutUIUtils>()->GetFrontDocument();
+	if (frontDoc == nil)
+		return kFalse;
+	return ::GetUIDRef(frontDoc).GetDataBase() == sPeekTargetDB;
 }
 
 
@@ -397,37 +399,31 @@ IEventDispatcher::EventTypeList KESCMPeekWatcher::WatchEvent(IEvent* e)
 	if (sPeekArmed)
 	{
 		// arm 済みドキュメントがまだ開いているか検証(片方を閉じた後のダングリング参照を防ぐ)。
+		// ★以前はここで peek arm の解除・旧版べた載せの破棄だけを個別に行い、マーク本体(sEntries/sDB)には
+		// 触れていなかった。通常はドキュメントクローズ responder(KESCMHandleDocsClosed)がクローズ直後に
+		// 先回りして片付けるためこの分岐へは実質到達しないが、保険として残す以上は KESCMHandleDocsClosed に
+		// 一本化し、Stop 相当のフルクリーンアップ(マーク破棄＋パネル更新も)を確実に行う
+		// (枠だけ残る／ボタンだけ変わるといった食い違いを防ぐ)。
 		InterfacePtr<IApplication> app(GetExecutionContextSession()->QueryApplication());
 		InterfacePtr<IDocumentList> docList(app ? app->QueryDocumentList() : nil);
 		if (docList == nil ||
 		    docList->FindDocByDataBase(sPeekTargetDB) == nil ||
 		    docList->FindDocByDataBase(sPeekSourceDB) == nil)
 		{
-			// ドキュメントが消えた → disarm して全部破棄。
-			KESCMRestoreTool();	// ハンドに切替え中なら元へ戻す
-			sPeekArmed = kFalse;
-			sPeekTargetDB = nil;
-			sPeekSourceDB = nil;
-			sPeekActive = kFalse;
-			sSingleShowing = kFalse;
-			sFaintShowing = kFalse;
-			sColorHoldShowing = kFalse;
-			KESCMDrawEventHandler::sToastVisible = kFalse;	// 色サンプルのトーストが出ていれば消す(db が消えたため)
-			KESCMDrawEventHandler::sToastDB = nil;
-			KESCMDrawEventHandler::sMarksVisible = kFalse;	// 既定(非表示)へ
-			KESCMDrawEventHandler::sMarkScreenOpacity = KESCMBaseScreenOpacity();	// 不透明度も基準値(印刷設定に応じる)へ戻す。他の解除箇所と一貫
-			KESCMDrawEventHandler::DropAllOrig();
+			KESCMHandleDocsClosed();
 			return interest;
 		}
 	}
 
 	if (type == IEvent::kMButtonDn)
 	{
-		if (sPeekArmed && e->ShiftKeyDown() && e->CmdKeyDown() && e->OptionAltKeyDown())
+		if (sPeekArmed && e->ShiftKeyDown() && e->CmdKeyDown() && e->OptionAltKeyDown() && KESCMFrontViewIsOverTarget())
 		{
 			// Shift＋Ctrl＋Alt＋ミドル押下: クリック点の CMYK 生値(0..255)を新・旧でサンプリングし、押下中だけ
 			// トーストで "Target C.. M.. Y.. K..  Source C.. M.. Y.. K.." を表示。離す(kMButtonUp)と消す。3キー同時は
 			// この先頭分岐で捕まえる(後続の Shift/Ctrl/Alt 単独 peek より前に置く=単独分岐に吸われないため)。
+			// ★対象(Target)文書のウィンドウ上でのみ反応(KESCMFrontViewIsOverTarget)。Source 側や無関係な
+			// 第3文書のウィンドウでミドルクリックしても、素のミドル動作を邪魔しないよう何もしない。
 			PMString colorMsg;
 			if (KESCMSampleCmykUnderMouse(sPeekTargetDB, sPeekSourceDB, colorMsg))
 			{
@@ -461,10 +457,11 @@ IEventDispatcher::EventTypeList KESCMPeekWatcher::WatchEvent(IEvent* e)
 			// Alt(=Win, OptionAltKeyDown)＋ミドル押下: 同じ peek を 50% 透明で重ねる(現行ページと半々のゴースト比較)。
 			KESCMBeginPeekHold(kKESCMPeekSemiOpacity);
 		}
-		else if (sPeekArmed && e->CmdKeyDown())
+		else if (sPeekArmed && e->CmdKeyDown() && KESCMFrontViewIsOverTarget())
 		{
 			// Ctrl(=Win, CmdKeyDown)＋ミドル押下(momentary): マウス下スプレッドだけ枠を再検出して更新。
 			// 旧版画像キャッシュは破棄(次 peek で作り直し)。完了したら「spread N updated」をトースト表示。
+			// ★対象(Target)文書のウィンドウ上でのみ反応(KESCMFrontViewIsOverTarget)。
 			int32 sp = -1;
 			if (KESCMRefreshSpreadUnderMouse(sPeekTargetDB, sPeekSourceDB, &sp, nil))
 			{
@@ -511,9 +508,7 @@ IEventDispatcher::EventTypeList KESCMPeekWatcher::WatchEvent(IEvent* e)
 			if (KESCMDrawEventHandler::sShowOriginal)
 			{
 				KESCMDrawEventHandler::sShowOriginal = kFalse;
-				InterfacePtr<IDocument> doc(sPeekTargetDB, sPeekTargetDB->GetRootUID(), UseDefaultIID());
-				if (doc != nil)
-					Utils<ILayoutUtils>()->InvalidateViews(doc);
+				KESCMInvalidateDB(sPeekTargetDB);
 			}
 		}
 		else if (sSingleShowing)
@@ -624,6 +619,11 @@ void KESCMDoArmMousePeek(IDataBase* targetDB, IDataBase* sourceDB)
 
 void KESCMDoDisarmMousePeek(IDataBase* db)
 {
+	// nil化する前に、実際に arm されていた対象文書を控えておく。呼び出し側の db(=操作時のアクティブ
+	// 文書)が前面で Source や無関係な第3文書に切り替わっていても、対象文書の枠が即座に消えるように
+	// するため(タイル表示等で対象文書が同時に見えている場合に効く)。
+	IDataBase* armedTargetDB = sPeekTargetDB;
+
 	KESCMRestoreTool();	// ハンドに切替え中なら元のツールへ戻す
 	sPeekArmed = kFalse;
 	sPeekTargetDB = nil;
@@ -633,13 +633,11 @@ void KESCMDoDisarmMousePeek(IDataBase* db)
 	KESCMDrawEventHandler::sMarksVisible = kFalse;	// 既定(非表示)のまま
 	KESCMDrawEventHandler::DropAllOrig();	// sShowOriginal も OFF にし、キャッシュを解放
 
-	if (db != nil)
-	{
-		InterfacePtr<IDocument> doc(db, db->GetRootUID(), UseDefaultIID());
-		if (doc != nil)
-			Utils<ILayoutUtils>()->InvalidateViews(doc);
-	}
+	KESCMInvalidateDB(armedTargetDB);
+	if (db != armedTargetDB)
+		KESCMInvalidateDB(db);
 
+	// トーストは実際に見えている(=アクティブな)文書に出すのが目的なので、こちらは db のまま。
 	PMString offMsg("ChangeMarker OFF");
 	offMsg.SetTranslatable(kFalse);
 	KESCMShowToast(db, offMsg, kKESCMToastDefaultMs);
@@ -654,8 +652,13 @@ IDataBase* KESCMArmedSourceDB()  { return sPeekSourceDB; }
 // KESCMHandleDocsClosed(KESCMCore.h で宣言)
 //   ドキュメントがクローズされた直後(kAfterCloseDoc レスポンダ)に呼ばれる。追跡中の全DB
 //   (マーク sDB / 旧版 sOrigDB / トースト sToastDB / peek arm の target・source)を IDocumentList で
-//   生存確認し、閉じていたものだけを確定的にクリーンアップする。どの db が閉じたかは信号から取れない
-//   ため、この生存スイープで判定する(HandleDrawEvent と同じ手法を、描画を待たずクローズ確定時に能動実行)。
+//   生存確認する。どの db が閉じたかは信号から取れないため、この生存スイープで判定する
+//   (HandleDrawEvent と同じ手法を、描画を待たずクローズ確定時に能動実行)。
+//
+//   ★比較(対象/元のどちらか)に関わる db が1つでも閉じていたら、個別の static だけを直すのではなく
+//   Stop ボタン(DoClear 相当)のフルクリーンアップを行う。以前は sDB 自体が閉じた場合しかマークを
+//   消さなかったため、「元」だけを閉じると peek arm は disarm されてボタン表示は Start に戻るのに、
+//   対象文書はまだ開いているのでマーク(枠)が消えずに残る、という見た目の不整合があった。
 //
 //   ★重要: 閉じた db ポインタは「FindDocByDataBase への比較」だけに使い、絶対に deref しない。
 //   閉じた文書の IDataBase は既に解放されている可能性があるため、後片付けは deref を伴う既存関数
@@ -671,45 +674,42 @@ void KESCMHandleDocsClosed()
 
 	bool16 changed = kFalse;
 
-	// マークオーバーレイ。
-	if (KESCMDrawEventHandler::sDB != nil &&
-	    docList->FindDocByDataBase(KESCMDrawEventHandler::sDB) == nil)
-	{
-		KESCMDrawEventHandler::DropAll();		// sDB=nil になる
-		changed = kTrue;
-	}
+	// 比較に関わる db(マーク sDB / 旧版 sOrigDB / peek arm の target・source)のいずれかが閉じたか。
+	const bool16 comparisonDocClosed =
+		(KESCMDrawEventHandler::sDB     != nil && docList->FindDocByDataBase(KESCMDrawEventHandler::sDB)     == nil) ||
+		(KESCMDrawEventHandler::sOrigDB != nil && docList->FindDocByDataBase(KESCMDrawEventHandler::sOrigDB) == nil) ||
+		(sPeekArmed &&
+		 ((sPeekTargetDB != nil && docList->FindDocByDataBase(sPeekTargetDB) == nil) ||
+		  (sPeekSourceDB != nil && docList->FindDocByDataBase(sPeekSourceDB) == nil)));
 
-	// 旧版べた載せオーバーレイ。
-	if (KESCMDrawEventHandler::sOrigDB != nil &&
-	    docList->FindDocByDataBase(KESCMDrawEventHandler::sOrigDB) == nil)
+	if (comparisonDocClosed)
 	{
-		KESCMDrawEventHandler::DropAllOrig();	// sOrigDB=nil になる
-		changed = kTrue;
-	}
-
-	// トースト。KESCMHideHoldToast は消去時に旧 sToastDB を deref(InvalidateViews)するため、
-	// 閉じた db に対しては呼ばず、static を直接 nil にする(描画ガード db==sToastDB がもう成立しない)。
-	if (KESCMDrawEventHandler::sToastDB != nil &&
-	    docList->FindDocByDataBase(KESCMDrawEventHandler::sToastDB) == nil)
-	{
-		KESCMDrawEventHandler::sToastVisible = kFalse;
-		KESCMDrawEventHandler::sToastDB = nil;
-		changed = kTrue;
-	}
-
-	// peek arm。target か source のどちらかが閉じていたら無音で disarm する。KESCMDoDisarmMousePeek は
-	// 閉じた db を deref(InvalidateViews)し、余計な "OFF" トーストも出すため呼ばない。ツールだけ元へ戻す。
-	if (sPeekArmed &&
-	    ((sPeekTargetDB != nil && docList->FindDocByDataBase(sPeekTargetDB) == nil) ||
-	     (sPeekSourceDB != nil && docList->FindDocByDataBase(sPeekSourceDB) == nil)))
-	{
-		KESCMRestoreTool();		// ハンドに切替え中なら元のツールへ戻す(db を触らない)
+		// Stop ボタン(DoClear)相当のフルクリーンアップ。閉じた db を deref する処理
+		// (InvalidateViews や "ChangeMarker OFF" トースト表示)は行わない。
+		KESCMDrawEventHandler::DropAll();		// sDB=nil、マークエントリ破棄
+		KESCMDrawEventHandler::DropAllOrig();	// sOrigDB=nil、旧版べた載せ破棄
+		KESCMRestoreTool();						// ハンドに切替え中なら元のツールへ戻す(db を触らない)
 		sPeekArmed     = kFalse;
 		sPeekTargetDB  = nil;
 		sPeekSourceDB  = nil;
 		sPeekActive    = kFalse;
 		sSingleShowing = kFalse;
 		KESCMDrawEventHandler::sMarksVisible = kFalse;
+		changed = kTrue;
+
+		PMString s("marks cleared");	// Stop ボタン(DoClear)と同じメッセージ
+		s.SetTranslatable(kFalse);
+		KESCMSetStatus(s);
+	}
+
+	// トースト。マーク/peek arm とは独立に、無関係な文書へ一時表示中だったケースも安全に消す。
+	// KESCMHideHoldToast は消去時に旧 sToastDB を deref(InvalidateViews)するため、
+	// 閉じた db に対しては呼ばず、static を直接 nil にする(描画ガード db==sToastDB がもう成立しない)。
+	if (KESCMDrawEventHandler::sToastDB != nil &&
+	    docList->FindDocByDataBase(KESCMDrawEventHandler::sToastDB) == nil)
+	{
+		KESCMDrawEventHandler::sToastVisible = kFalse;
+		KESCMDrawEventHandler::sToastDB = nil;
 		changed = kTrue;
 	}
 

@@ -21,6 +21,7 @@
 #include "PMString.h"
 
 #include "KESCMID.h"
+#include "KESCMCore.h"               // KESCMInvalidateDB
 #include "KESCMDrawEventHandler.h"   // sToastMsg / sToastVisible / sToastDB
 #include "KESCMToast.h"
 
@@ -32,6 +33,22 @@
 //========================================================================================
 static IIdleTask* sToastTask   = nil;	// タイマ本体(起動中に1度だけ生成して再利用)
 static bool16     sToastQueued = kFalse;	// タイマが現在キューに入っているか(二重 AddTask 防止)
+
+// db が非nilかつまだ開いていれば、その IDocument のビューを再描画する。RunTask(タイマ経由)と
+// KESCMHideHoldToast(ミドル解放時)はどちらも非同期に呼ばれ得る(表示してから時間が経っている)ため、
+// 閉じたドキュメントを deref しないよう生存確認してから invalidate する共有ヘルパー。
+static void KESCMInvalidateDBIfStillOpen(IDataBase* db)
+{
+	if (db == nil)
+		return;
+	InterfacePtr<IApplication> app(GetExecutionContextSession()->QueryApplication());
+	InterfacePtr<IDocumentList> docList(app ? app->QueryDocumentList() : nil);
+	if (docList == nil || docList->FindDocByDataBase(db) == nil)
+		return;
+	InterfacePtr<IDocument> doc(db, db->GetRootUID(), UseDefaultIID());
+	if (doc != nil)
+		Utils<ILayoutUtils>()->InvalidateViews(doc);
+}
 
 class KESCMToastIdleTask : public CPMUnknown<IIdleTask>
 {
@@ -53,17 +70,7 @@ uint32 KESCMToastIdleTask::RunTask(uint32 /*appFlags*/, IdleTimer* /*timeCheck*/
 	KESCMDrawEventHandler::sToastVisible = kFalse;
 	IDataBase* db = KESCMDrawEventHandler::sToastDB;
 	KESCMDrawEventHandler::sToastDB = nil;
-	if (db != nil)
-	{
-		InterfacePtr<IApplication> app(GetExecutionContextSession()->QueryApplication());
-		InterfacePtr<IDocumentList> docList(app ? app->QueryDocumentList() : nil);
-		if (docList != nil && docList->FindDocByDataBase(db) != nil)
-		{
-			InterfacePtr<IDocument> doc(db, db->GetRootUID(), UseDefaultIID());
-			if (doc != nil)
-				Utils<ILayoutUtils>()->InvalidateViews(doc);
-		}
-	}
+	KESCMInvalidateDBIfStillOpen(db);
 	sToastQueued = kFalse;
 	return IIdleTask::kEndOfTime;	// 自分をキューから除去(オブジェクトは sToastTask に保持=次の表示で再利用)
 }
@@ -92,12 +99,7 @@ void KESCMShowToast(IDataBase* db, const PMString& msg, uint32 ms)
 	KESCMDrawEventHandler::sToastDB = db;
 
 	// 即時に1回描く。
-	if (db != nil)
-	{
-		InterfacePtr<IDocument> doc(db, db->GetRootUID(), UseDefaultIID());
-		if (doc != nil)
-			Utils<ILayoutUtils>()->InvalidateViews(doc);
-	}
+	KESCMInvalidateDB(db);
 
 	// 自動消去タイマ(IIdleTask)。タイマ本体はセッション中1個を生成して再利用。
 	InterfacePtr<IIdleTaskMgr> mgr(GetExecutionContextSession(), UseDefaultIID());
@@ -132,12 +134,7 @@ void KESCMShowHoldToast(IDataBase* db, const PMString& msg)
 		sToastQueued = kFalse;
 	}
 
-	if (db != nil)
-	{
-		InterfacePtr<IDocument> doc(db, db->GetRootUID(), UseDefaultIID());
-		if (doc != nil)
-			Utils<ILayoutUtils>()->InvalidateViews(doc);
-	}
+	KESCMInvalidateDB(db);
 }
 
 // 押下中トーストを消す(ミドルを離したとき)。db がまだ開いていれば再描画して即反映する。
@@ -148,16 +145,7 @@ void KESCMHideHoldToast()
 	IDataBase* db = KESCMDrawEventHandler::sToastDB;
 	KESCMDrawEventHandler::sToastVisible = kFalse;
 	KESCMDrawEventHandler::sToastDB = nil;
-	if (db == nil)
-		return;
-	InterfacePtr<IApplication> app(GetExecutionContextSession()->QueryApplication());
-	InterfacePtr<IDocumentList> docList(app ? app->QueryDocumentList() : nil);
-	if (docList != nil && docList->FindDocByDataBase(db) != nil)
-	{
-		InterfacePtr<IDocument> doc(db, db->GetRootUID(), UseDefaultIID());
-		if (doc != nil)
-			Utils<ILayoutUtils>()->InvalidateViews(doc);
-	}
+	KESCMInvalidateDBIfStillOpen(db);
 }
 
 // セッション終了時にトーストタイマ本体(sToastTask)を解放する。キューに残っていれば外してから Release。
