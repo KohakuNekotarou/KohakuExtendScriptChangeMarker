@@ -649,3 +649,71 @@ void KESCMDoDisarmMousePeek(IDataBase* db)
 bool16     KESCMIsArmed()        { return sPeekArmed; }
 IDataBase* KESCMArmedTargetDB()  { return sPeekTargetDB; }
 IDataBase* KESCMArmedSourceDB()  { return sPeekSourceDB; }
+
+//========================================================================================
+// KESCMHandleDocsClosed(KESCMCore.h で宣言)
+//   ドキュメントがクローズされた直後(kAfterCloseDoc レスポンダ)に呼ばれる。追跡中の全DB
+//   (マーク sDB / 旧版 sOrigDB / トースト sToastDB / peek arm の target・source)を IDocumentList で
+//   生存確認し、閉じていたものだけを確定的にクリーンアップする。どの db が閉じたかは信号から取れない
+//   ため、この生存スイープで判定する(HandleDrawEvent と同じ手法を、描画を待たずクローズ確定時に能動実行)。
+//
+//   ★重要: 閉じた db ポインタは「FindDocByDataBase への比較」だけに使い、絶対に deref しない。
+//   閉じた文書の IDataBase は既に解放されている可能性があるため、後片付けは deref を伴う既存関数
+//   (KESCMHideHoldToast / KESCMDoDisarmMousePeek は InvalidateViews で db を deref する)を呼ばず、
+//   static を直接 nil にするだけで行う。
+//========================================================================================
+void KESCMHandleDocsClosed()
+{
+	InterfacePtr<IApplication> app(GetExecutionContextSession()->QueryApplication());
+	InterfacePtr<IDocumentList> docList(app ? app->QueryDocumentList() : nil);
+	if (docList == nil)
+		return;
+
+	bool16 changed = kFalse;
+
+	// マークオーバーレイ。
+	if (KESCMDrawEventHandler::sDB != nil &&
+	    docList->FindDocByDataBase(KESCMDrawEventHandler::sDB) == nil)
+	{
+		KESCMDrawEventHandler::DropAll();		// sDB=nil になる
+		changed = kTrue;
+	}
+
+	// 旧版べた載せオーバーレイ。
+	if (KESCMDrawEventHandler::sOrigDB != nil &&
+	    docList->FindDocByDataBase(KESCMDrawEventHandler::sOrigDB) == nil)
+	{
+		KESCMDrawEventHandler::DropAllOrig();	// sOrigDB=nil になる
+		changed = kTrue;
+	}
+
+	// トースト。KESCMHideHoldToast は消去時に旧 sToastDB を deref(InvalidateViews)するため、
+	// 閉じた db に対しては呼ばず、static を直接 nil にする(描画ガード db==sToastDB がもう成立しない)。
+	if (KESCMDrawEventHandler::sToastDB != nil &&
+	    docList->FindDocByDataBase(KESCMDrawEventHandler::sToastDB) == nil)
+	{
+		KESCMDrawEventHandler::sToastVisible = kFalse;
+		KESCMDrawEventHandler::sToastDB = nil;
+		changed = kTrue;
+	}
+
+	// peek arm。target か source のどちらかが閉じていたら無音で disarm する。KESCMDoDisarmMousePeek は
+	// 閉じた db を deref(InvalidateViews)し、余計な "OFF" トーストも出すため呼ばない。ツールだけ元へ戻す。
+	if (sPeekArmed &&
+	    ((sPeekTargetDB != nil && docList->FindDocByDataBase(sPeekTargetDB) == nil) ||
+	     (sPeekSourceDB != nil && docList->FindDocByDataBase(sPeekSourceDB) == nil)))
+	{
+		KESCMRestoreTool();		// ハンドに切替え中なら元のツールへ戻す(db を触らない)
+		sPeekArmed     = kFalse;
+		sPeekTargetDB  = nil;
+		sPeekSourceDB  = nil;
+		sPeekActive    = kFalse;
+		sSingleShowing = kFalse;
+		KESCMDrawEventHandler::sMarksVisible = kFalse;
+		changed = kTrue;
+	}
+
+	// 何か片付けたらパネルの ON/OFF 表示を実状態に合わせる(①「ON 固着」の解消)。
+	if (changed)
+		KESCMRefreshPanel();
+}

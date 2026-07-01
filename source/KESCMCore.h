@@ -69,4 +69,16 @@ IDataBase*	KESCMArmedSourceDB();
 bool16		KESCMGetPrintMarks();	// 印刷マーク ON/OFF
 bool16		KESCMGetPrintFaint();	// 印刷不透明度: kTrue=約25% / kFalse=通常
 
+// ドキュメントがクローズされた直後(kAfterCloseDoc レスポンダ)に呼ぶ。追跡中の全DB(マーク/旧版画像/
+// トースト/peek arm)を IDocumentList で生存確認し、閉じていたものだけ確定的にクリーンアップする
+// (DropAll/DropAllOrig/トースト消去/無音 disarm)。片付けが起きたらパネルも ON→OFF 更新する。
+// どの db が閉じたかは信号から取れない(AfterClose では UIDRef 無効)ため、生存スイープで判定する。
+// 実体は KESCMPeek.cpp(peek の file-local 状態にアクセスできる唯一の場所)。
+void		KESCMHandleDocsClosed();
+
+// 現在表示中のパネルがあれば、その ON/OFF 表示(Target/Source 名・アイコン・トグルラベル)を
+// 現在の arm 状態(KESCMIsArmed 等)に合わせて更新する。パネルが隠れていれば何もしない
+// (再表示時に AutoAttach が反映する)。実体は KESCMPanelObserver.cpp。
+void		KESCMRefreshPanel();
+
 #endif // __KESCMCore_h__

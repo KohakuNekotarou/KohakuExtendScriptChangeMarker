@@ -25,6 +25,7 @@
 #include "ITriStateControlData.h"
 #include "IBooleanControlData.h"
 #include "IApplication.h"			// GetExecutionContextSession / QueryApplication
+#include "IPanelMgr.h"				// QueryPanelManager / GetVisiblePanel(外部からのパネル更新)
 #include "IActiveContext.h"
 #include "IDocument.h"
 #include "IDocumentList.h"
@@ -66,6 +67,15 @@ private:
 };
 
 CREATE_PMINTERFACE(KESCMPanelObserver, kKESCMPanelObserverImpl)
+
+//----------------------------------------------------------------------------------------
+// 今セッションで最後に表示したステータス文字列。
+// StaticMultiLineTextWidget の内容はワークスペースに永続化されるため、InDesign を再起動して
+// アイコン状態のパネルを開くと前回セッションの文字列(例: "kescm: pages compared=22")が残って
+// しまう。そこで「今セッションで表示したメッセージ」だけをここに覚えておき、AutoAttach で必ず
+// 上書きする。プラグインを一度も操作していなければ空文字なので何も表示されない。
+//----------------------------------------------------------------------------------------
+namespace { PMString gSessionStatus; }
 
 //----------------------------------------------------------------------------------------
 // ローカルヘルパ
@@ -154,6 +164,11 @@ void KESCMPanelObserver::AutoAttach()
 
 	this->UpdateOpacityEnabled();	// 初期=印刷OFF なのでラジオは無効
 	this->UpdateInfoDisplay();		// 開始済みなら Target/Source 名と ON アイコン、未開始なら名前なし+OFF
+
+	// ステータス欄はワークスペースに永続化されるため、再起動後にアイコン状態から開くと前回
+	// セッションの文字列が残る。今セッションで表示したメッセージ(未操作なら空)で必ず上書きし、
+	// 一度も起動していなければ何も表示しない。
+	this->SetStatus(gSessionStatus);
 }
 
 void KESCMPanelObserver::AutoDetach()
@@ -330,8 +345,14 @@ void KESCMPanelObserver::UpdateOpacityEnabled()
 	if (rN  != nil) rN->Enable(enable);
 }
 
-void KESCMPanelObserver::UpdateInfoDisplay()
+// パネルの ON/OFF 表示(Target/Source 名・アイコン・トグルラベル)を現在の arm 状態
+// (KESCMIsArmed 等)に合わせて更新する共通処理。メンバ UpdateInfoDisplay(自パネル)と外部の
+// KESCMRefreshPanel(可視パネルをレスポンダから)双方から使うため、pcd を引数に取る自由関数にする。
+static void KESCMApplyPanelInfo(const InterfacePtr<IPanelControlData>& pcd)
 {
+	if (pcd == nil)
+		return;
+
 	const bool16 started = KESCMIsArmed() && (KESCMArmedTargetDB() != nil);
 
 	// Target:/Source: ラベルは常時。名前は開始中のみ表示(英語固定: 現状英語のまま)。
@@ -348,13 +369,13 @@ void KESCMPanelObserver::UpdateInfoDisplay()
 		source.Append(KESCMDocNameFromDB(KESCMArmedSourceDB()));
 	}
 
-	IControlView* tView = this->FindW(kKESCMTargetTextWidgetID);
+	IControlView* tView = pcd->FindWidget(kKESCMTargetTextWidgetID);
 	if (tView != nil)
 	{
 		InterfacePtr<ITextControlData> tcd(tView, UseDefaultIID());
 		if (tcd != nil) tcd->SetString(target);
 	}
-	IControlView* sView = this->FindW(kKESCMSourceTextWidgetID);
+	IControlView* sView = pcd->FindWidget(kKESCMSourceTextWidgetID);
 	if (sView != nil)
 	{
 		InterfacePtr<ITextControlData> tcd(sView, UseDefaultIID());
@@ -362,13 +383,13 @@ void KESCMPanelObserver::UpdateInfoDisplay()
 	}
 
 	// アイコン: 開始中=ON / 未開始=OFF を出し分ける(2枚を重ねて可視を切替)。
-	IControlView* onView  = this->FindW(kKESCMIconOnWidgetID);
-	IControlView* offView = this->FindW(kKESCMIconOffWidgetID);
+	IControlView* onView  = pcd->FindWidget(kKESCMIconOnWidgetID);
+	IControlView* offView = pcd->FindWidget(kKESCMIconOffWidgetID);
 	if (onView  != nil) onView->ShowView(started ? kTrue : kFalse);
 	if (offView != nil) offView->ShowView(started ? kFalse : kTrue);
 
 	// トグルボタンのラベル: 開始中=Stop / 未開始=Start(英語固定)。
-	IControlView* toggleView = this->FindW(kKESCMToggleButtonWidgetID);
+	IControlView* toggleView = pcd->FindWidget(kKESCMToggleButtonWidgetID);
 	if (toggleView != nil)
 	{
 		InterfacePtr<ITextControlData> tcd(toggleView, UseDefaultIID());
@@ -381,8 +402,15 @@ void KESCMPanelObserver::UpdateInfoDisplay()
 	}
 }
 
+void KESCMPanelObserver::UpdateInfoDisplay()
+{
+	InterfacePtr<IPanelControlData> pcd(this, UseDefaultIID());
+	KESCMApplyPanelInfo(pcd);
+}
+
 void KESCMPanelObserver::SetStatus(const PMString& s)
 {
+	gSessionStatus = s;	// パネルを隠して再表示したときに復元できるよう、今セッションの表示内容を覚えておく
 	IControlView* cv = this->FindW(kKESCMStatusTextWidgetID);
 	if (cv == nil)
 		return;
@@ -412,6 +440,27 @@ void KESCMPanelObserver::SetSelected(const WidgetID& wid, bool16 sel)
 		ts->Select(kTrue /*invalidate*/, kFalse /*don't notify*/);
 	else
 		ts->Deselect(kTrue /*invalidate*/, kFalse /*don't notify*/);
+}
+
+//========================================================================================
+// KESCMRefreshPanel(KESCMCore.h で宣言)
+//   現在表示中の ChangeMarker パネルがあれば、その ON/OFF 表示を現在の arm 状態へ更新する。
+//   パネルが隠れていれば何もしない(次に開いたとき AutoAttach が実状態を反映する)。
+//   クローズレスポンダ(KESCMHandleDocsClosed)から、追跡文書が閉じてパネルを OFF に戻すときに呼ぶ。
+//========================================================================================
+void KESCMRefreshPanel()
+{
+	InterfacePtr<IApplication> app(GetExecutionContextSession()->QueryApplication());
+	if (app == nil)
+		return;
+	InterfacePtr<IPanelMgr> panelMgr(app->QueryPanelManager());
+	if (panelMgr == nil)
+		return;
+	IControlView* panel = panelMgr->GetVisiblePanel(kKESCMPanelWidgetID);
+	if (panel == nil)
+		return;		// パネルは隠れている: 触る先が無い。
+	InterfacePtr<IPanelControlData> pcd(panel, UseDefaultIID());
+	KESCMApplyPanelInfo(pcd);
 }
 
 // KESCMPanelObserver.cpp 終わり。

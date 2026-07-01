@@ -56,6 +56,7 @@ DECLARE_PMID(kClassIDSpace, kKESCMPeekStartupBoss, kKESCMPrefix + 6)	// IStartup
 DECLARE_PMID(kClassIDSpace, kKESCMToastIdleTaskBoss, kKESCMPrefix + 7)	// IIdleTask: カンバス上のトーストを自動で消す
 DECLARE_PMID(kClassIDSpace, kKESCMPanelWidgetBoss, kKESCMPrefix + 8)	// ChangeMarker 操作パネル(パレット)
 DECLARE_PMID(kClassIDSpace, kKESCMActionComponentBoss, kKESCMPrefix + 9)	// About メニューのアクションコンポーネント
+DECLARE_PMID(kClassIDSpace, kKESCMDocResponderServiceBoss, kKESCMPrefix + 10)	// IK2ServiceProvider+IResponder: ドキュメントクローズ監視(閉じた文書の追跡状態を確定クリーンアップ)
 //DECLARE_PMID(kClassIDSpace, kKESCMBoss, kKESCMPrefix + 6)
 //DECLARE_PMID(kClassIDSpace, kKESCMBoss, kKESCMPrefix + 8)
 //DECLARE_PMID(kClassIDSpace, kKESCMBoss, kKESCMPrefix + 9)
@@ -115,6 +116,8 @@ DECLARE_PMID(kImplementationIDSpace, kKESCMPeekStartupImpl, kKESCMPrefix + 4)	//
 DECLARE_PMID(kImplementationIDSpace, kKESCMToastIdleTaskImpl, kKESCMPrefix + 5)	// IIdleTask 実装(トースト自動消去)
 DECLARE_PMID(kImplementationIDSpace, kKESCMPanelObserverImpl, kKESCMPrefix + 6)	// IObserver 実装(パネルのウィジェットオブザーバ)
 DECLARE_PMID(kImplementationIDSpace, kKESCMActionComponentImpl, kKESCMPrefix + 7)	// IActionComponent 実装(About)
+DECLARE_PMID(kImplementationIDSpace, kKESCMDocServiceProviderImpl, kKESCMPrefix + 8)	// IK2ServiceProvider 実装(クローズ監視のサービス登録)
+DECLARE_PMID(kImplementationIDSpace, kKESCMDocResponderImpl, kKESCMPrefix + 9)	// IResponder 実装(クローズ確定時の追跡状態クリーンアップ)
 //DECLARE_PMID(kImplementationIDSpace, kKESCMImpl, kKESCMPrefix + 6)
 //DECLARE_PMID(kImplementationIDSpace, kKESCMImpl, kKESCMPrefix + 7)
 //DECLARE_PMID(kImplementationIDSpace, kKESCMImpl, kKESCMPrefix + 8)

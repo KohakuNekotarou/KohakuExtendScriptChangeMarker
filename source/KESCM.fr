@@ -53,6 +53,7 @@
 #include "SpreadID.h"	// for kPageObjectScriptElement
 #include "GraphicsID.h"	// for IID_IDRWEVTHANDLER
 #include "DocFrameworkID.h"	// for kDocumentObjectScriptElement
+#include "DocumentID.h"	// for kAfterCloseDocSignalResponderService (doc-close responder)
 
 // Project includes:
 #include "KESCMID.h"
@@ -171,6 +172,18 @@ resource ClassDescriptionTable(kSDKDefClassDescriptionTableResourceID)
 		{
 			IID_IPANELMENUDATA, kCPanelMenuDataImpl,
 			IID_IOBSERVER, kKESCMPanelObserverImpl,
+		}
+	},
+
+	// Document-close responder service. IK2ServiceProvider advertises the after-close
+	// signal; IResponder cleans up any of KESCM's tracked, now-closed documents.
+	Class
+	{
+		kKESCMDocResponderServiceBoss,
+		kInvalidClass,
+		{
+			IID_IK2SERVICEPROVIDER, kKESCMDocServiceProviderImpl,
+			IID_IRESPONDER,         kKESCMDocResponderImpl,
 		}
 	},
 }}};
